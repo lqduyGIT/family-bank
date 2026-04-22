@@ -1,0 +1,198 @@
+// ============================================================
+// views/settings.js — group profile (bank info, target), leave, sign out
+// Bank picker uses VietQR public API
+// ============================================================
+
+import { store } from '../store.js';
+import { fetchBanks } from '../banks.js';
+import { parseAmountInput, formatVND, escapeHtml } from '../utils.js';
+import { toast } from '../components/toast.js';
+import { confirmDialog } from '../components/modal.js';
+
+export function render(mount, storeRef = store) {
+  mount.innerHTML = shell();
+
+  const banksPromise = fetchBanks().catch(() => []);
+
+  const unsub = storeRef.subscribe(async (state) => {
+    if (state.status !== 'ready' || !state.group) return;
+    await update(mount, state, banksPromise);
+  });
+
+  // Bind actions (re-binding after render is idempotent because we replace entire shell innerHTML only once)
+  mount.querySelector('[data-act="save"]').addEventListener('click', () => saveProfile(mount));
+  mount.querySelector('[data-act="leave"]').addEventListener('click', () => leaveGroup());
+  mount.querySelector('[data-act="signout"]').addEventListener('click', () => signOut());
+
+  return () => unsub();
+}
+
+function shell() {
+  return `
+    <section class="px-5">
+      <h2 class="text-xl font-bold text-slate-800 mb-1">Cài đặt</h2>
+      <p class="text-sm text-slate-500 mb-5" data-role>—</p>
+
+      <!-- Bank info -->
+      <div class="bg-white rounded-3xl p-5 neu-soft mb-5">
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">Tài khoản ngân hàng</h3>
+        <p class="text-[11px] text-slate-500 mb-4">Dùng để sinh mã VietQR đóng quỹ</p>
+
+        <div class="space-y-3">
+          <div>
+            <label class="fb-label">Ngân hàng</label>
+            <select data-field="bankCode" class="fb-input">
+              <option value="">Đang tải danh sách...</option>
+            </select>
+          </div>
+          <div>
+            <label class="fb-label">Số tài khoản</label>
+            <input data-field="accountNumber" inputmode="numeric" class="fb-input font-mono" maxlength="20" />
+          </div>
+          <div>
+            <label class="fb-label">Chủ tài khoản (IN HOA, KHÔNG DẤU)</label>
+            <input data-field="accountHolder" class="fb-input uppercase" maxlength="50" placeholder="NGUYEN THI HOA" />
+          </div>
+          <div>
+            <label class="fb-label">Gợi ý số tiền đóng quỹ / tháng</label>
+            <input data-field="monthlyTarget" inputmode="numeric" class="fb-input" placeholder="2,000,000" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Group meta -->
+      <div class="bg-white rounded-3xl p-5 neu-soft mb-5">
+        <h3 class="text-sm font-semibold text-slate-800 mb-1">Nhóm gia đình</h3>
+        <p class="text-[11px] text-slate-500 mb-4">Thông tin nhóm và mã mời</p>
+        <div class="space-y-3">
+          <div>
+            <label class="fb-label">Tên nhóm</label>
+            <input data-field="groupName" class="fb-input" maxlength="40" />
+          </div>
+          <div>
+            <label class="fb-label">Mã mời</label>
+            <input data-field="inviteCode" class="fb-input font-mono tracking-[0.2em] text-center bg-slate-100" readonly />
+            <p class="text-[11px] text-slate-400 mt-1">Chia sẻ mã này cho các thành viên muốn tham gia</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Save -->
+      <button data-act="save" class="fb-btn fb-btn-primary mb-5">
+        <i class="fa-regular fa-floppy-disk mr-1"></i> Lưu thay đổi
+      </button>
+
+      <!-- Danger zone -->
+      <div class="bg-white rounded-3xl p-5 neu-soft mb-5">
+        <h3 class="text-sm font-semibold text-red-500 mb-3">Vùng nguy hiểm</h3>
+        <button data-act="leave" class="fb-btn fb-btn-ghost mb-2 text-red-500">
+          <i class="fa-solid fa-door-open mr-1"></i> Rời khỏi nhóm
+        </button>
+        <button data-act="signout" class="fb-btn fb-btn-ghost text-slate-500">
+          <i class="fa-solid fa-right-from-bracket mr-1"></i> Đăng xuất
+        </button>
+      </div>
+
+      <p class="text-center text-[10px] text-slate-400 pb-4">Family Bank · v1.0 · Made with ❤️</p>
+    </section>
+  `;
+}
+
+async function update(mount, state, banksPromise) {
+  const { group } = state;
+  const roleEl = mount.querySelector('[data-role]');
+  const isOwner = store.isOwner();
+  roleEl.textContent = isOwner ? '👑 Bạn là chủ nhóm — có quyền chỉnh sửa' : '🙋 Bạn là thành viên — chỉ chủ nhóm mới sửa được';
+
+  // Populate bank select
+  const bankSelect = mount.querySelector('[data-field="bankCode"]');
+  if (bankSelect.options.length <= 1) {
+    const banks = await banksPromise;
+    if (banks.length > 0) {
+      bankSelect.innerHTML = `<option value="">— Chọn ngân hàng —</option>` +
+        banks.map((b) => `<option value="${b.code}" data-name="${escapeHtml(b.shortName)}">${escapeHtml(b.shortName)} — ${escapeHtml(b.name)}</option>`).join('');
+    } else {
+      bankSelect.innerHTML = `<option value="">Không tải được (kiểm tra mạng)</option>`;
+    }
+  }
+
+  // Fill only if input not currently focused (avoid stealing user typing)
+  const active = document.activeElement;
+  const setField = (name, val) => {
+    const el = mount.querySelector(`[data-field="${name}"]`);
+    if (!el || el === active) return;
+    el.value = val ?? '';
+  };
+
+  setField('bankCode',      group.bankCode || '');
+  setField('accountNumber', group.accountNumber || '');
+  setField('accountHolder', group.accountHolder || '');
+  setField('monthlyTarget', group.monthlyTarget ? new Intl.NumberFormat('vi-VN').format(group.monthlyTarget) : '');
+  setField('groupName',     group.name || '');
+  setField('inviteCode',    group.inviteCode || '');
+
+  // Disable inputs if not owner
+  mount.querySelectorAll('[data-field]').forEach((el) => {
+    if (el.dataset.field === 'inviteCode') return; // always readonly
+    el.disabled = !isOwner;
+  });
+  mount.querySelector('[data-act="save"]').disabled = !isOwner;
+  mount.querySelector('[data-act="save"]').style.opacity = isOwner ? '1' : '0.5';
+}
+
+async function saveProfile(mount) {
+  const bankSelect = mount.querySelector('[data-field="bankCode"]');
+  const bankCode = bankSelect.value;
+  const bankName = bankSelect.options[bankSelect.selectedIndex]?.dataset.name || '';
+  const accountNumber = mount.querySelector('[data-field="accountNumber"]').value.trim();
+  const accountHolder = mount.querySelector('[data-field="accountHolder"]').value.trim().toUpperCase();
+  const monthlyTarget = parseAmountInput(mount.querySelector('[data-field="monthlyTarget"]').value);
+  const name = mount.querySelector('[data-field="groupName"]').value.trim();
+
+  if (!name) return toast('Tên nhóm không được để trống', 'error');
+
+  const btn = mount.querySelector('[data-act="save"]');
+  btn.disabled = true;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang lưu...`;
+
+  try {
+    await store.updateGroupProfile({
+      bankCode, bankName, accountNumber, accountHolder, monthlyTarget, name,
+    });
+    toast(`Đã lưu · mục tiêu ${formatVND(monthlyTarget)}`, 'success');
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Lưu thất bại', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<i class="fa-regular fa-floppy-disk mr-1"></i> Lưu thay đổi`;
+  }
+}
+
+async function leaveGroup() {
+  const group = store.getGroup();
+  const ok = await confirmDialog({
+    title: 'Rời khỏi nhóm?',
+    message: `Bạn sẽ không còn thấy giao dịch của "${group?.name || 'nhóm'}". Có thể tham gia lại bằng mã mời sau.`,
+    confirmText: 'Rời nhóm',
+    danger: true,
+  });
+  if (!ok) return;
+  try {
+    await store.leaveGroup();
+    toast('Đã rời nhóm', 'info');
+  } catch (err) {
+    toast(err.message || 'Không rời được', 'error');
+  }
+}
+
+async function signOut() {
+  const ok = await confirmDialog({
+    title: 'Đăng xuất?',
+    message: 'Dữ liệu vẫn an toàn trên Firebase. Đăng nhập lại sẽ thấy ngay.',
+    confirmText: 'Đăng xuất',
+    danger: true,
+  });
+  if (!ok) return;
+  await store.signOut();
+}

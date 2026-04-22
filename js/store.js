@@ -1,0 +1,280 @@
+// ============================================================
+// store.js — auth + group-scoped state with Firestore real-time sync
+// Status machine: loading → anonymous | no-group | ready
+// ============================================================
+
+import { getFirebase } from './firebase.js';
+import { onAuthChange, signInWithGoogle as authSignIn, signOut as authSignOut } from './auth.js';
+
+const EMPTY_STATE = () => ({
+  status: 'loading',  // 'loading' | 'anonymous' | 'no-group' | 'ready'
+  user: null,         // { uid, displayName, photoURL, email }
+  group: null,        // { id, name, ownerUid, bankCode, bankName, accountNumber, accountHolder, monthlyTarget, inviteCode, createdAt }
+  members: [],        // [{ uid, displayName, photoURL, role, joinedAt }]
+  transactions: [],   // [{ id, type, amount, note, category, memberUid, memberName, date }]
+  error: null,
+});
+
+class Store {
+  constructor() {
+    this._state = EMPTY_STATE();
+    this._subs = new Set();
+    this._unsubAuth = null;
+    this._unsubGroup = null;
+    this._unsubMembers = null;
+    this._unsubTransactions = null;
+  }
+
+  // ---- Bootstrap ----
+  async init() {
+    this._unsubAuth = await onAuthChange(async (user) => {
+      // Reset group subs when auth changes
+      this._teardownGroup();
+
+      if (!user) {
+        this._set({ ...EMPTY_STATE(), status: 'anonymous' });
+        return;
+      }
+
+      this._set({ user, status: 'loading' });
+
+      // Write/update /users/{uid} doc
+      const { db, fsMod } = await getFirebase();
+      const userRef = fsMod.doc(db, 'users', user.uid);
+      const snap = await fsMod.getDoc(userRef);
+      const existing = snap.exists() ? snap.data() : {};
+      const merged = {
+        displayName: user.displayName || existing.displayName || 'Ẩn danh',
+        photoURL: user.photoURL || existing.photoURL || '',
+        email: user.email || existing.email || '',
+        currentGroupId: existing.currentGroupId || null,
+      };
+      await fsMod.setDoc(userRef, merged, { merge: true });
+
+      if (merged.currentGroupId) {
+        await this._attachGroup(merged.currentGroupId);
+      } else {
+        this._set({ status: 'no-group' });
+      }
+    });
+  }
+
+  // ---- Subscriptions ----
+  subscribe(fn) {
+    this._subs.add(fn);
+    fn(this._state);
+    return () => this._subs.delete(fn);
+  }
+
+  _set(patch) {
+    this._state = { ...this._state, ...patch };
+    this._emit();
+  }
+
+  _emit() {
+    this._subs.forEach((fn) => { try { fn(this._state); } catch (e) { console.error(e); } });
+  }
+
+  // ---- Getters ----
+  getState() { return this._state; }
+  getUser() { return this._state.user; }
+  getGroup() { return this._state.group; }
+  getMembers() { return this._state.members; }
+  getTransactions() { return this._state.transactions; }
+  isOwner() { return this._state.group && this._state.user && this._state.group.ownerUid === this._state.user.uid; }
+
+  getBalance() {
+    return this._state.transactions.reduce((s, t) => s + (t.type === 'income' ? t.amount : -t.amount), 0);
+  }
+
+  getMemberByUid(uid) {
+    return this._state.members.find((m) => m.uid === uid) || null;
+  }
+
+  // ---- Auth actions ----
+  async signInWithGoogle() {
+    try { await authSignIn(); }
+    catch (e) { this._set({ error: e.message }); throw e; }
+  }
+
+  async signOut() {
+    await authSignOut();
+  }
+
+  // ---- Group actions ----
+  async createGroup({ name }) {
+    const user = this._state.user;
+    if (!user) throw new Error('Chưa đăng nhập');
+    const trimmed = String(name).trim();
+    if (!trimmed) throw new Error('Tên nhóm không được để trống');
+
+    const { db, fsMod } = await getFirebase();
+    const groupRef = fsMod.doc(fsMod.collection(db, 'groups'));
+    const groupId = groupRef.id;
+    const inviteCode = generateInviteCode();
+
+    const groupData = {
+      name: trimmed,
+      ownerUid: user.uid,
+      bankCode: '',
+      bankName: '',
+      accountNumber: '',
+      accountHolder: '',
+      monthlyTarget: 2000000,
+      inviteCode,
+      createdAt: new Date().toISOString(),
+    };
+
+    const batch = fsMod.writeBatch(db);
+    batch.set(groupRef, groupData);
+    batch.set(fsMod.doc(db, 'groups', groupId, 'members', user.uid), {
+      uid: user.uid,
+      displayName: user.displayName || 'Ẩn danh',
+      photoURL: user.photoURL || '',
+      role: 'owner',
+      joinedAt: new Date().toISOString(),
+    });
+    batch.set(fsMod.doc(db, 'inviteCodes', inviteCode), {
+      groupId,
+      createdBy: user.uid,
+      createdAt: new Date().toISOString(),
+    });
+    batch.set(fsMod.doc(db, 'users', user.uid), { currentGroupId: groupId }, { merge: true });
+    await batch.commit();
+
+    await this._attachGroup(groupId);
+    return groupId;
+  }
+
+  async joinGroup(rawCode) {
+    const user = this._state.user;
+    if (!user) throw new Error('Chưa đăng nhập');
+    const code = String(rawCode).trim().toUpperCase();
+    if (!code) throw new Error('Nhập mã mời');
+
+    const { db, fsMod } = await getFirebase();
+    const codeSnap = await fsMod.getDoc(fsMod.doc(db, 'inviteCodes', code));
+    if (!codeSnap.exists()) throw new Error('Mã mời không tồn tại');
+    const { groupId } = codeSnap.data();
+
+    await fsMod.setDoc(fsMod.doc(db, 'groups', groupId, 'members', user.uid), {
+      uid: user.uid,
+      displayName: user.displayName || 'Ẩn danh',
+      photoURL: user.photoURL || '',
+      role: 'member',
+      joinedAt: new Date().toISOString(),
+    });
+    await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), { currentGroupId: groupId }, { merge: true });
+
+    await this._attachGroup(groupId);
+    return groupId;
+  }
+
+  async leaveGroup() {
+    const user = this._state.user;
+    const group = this._state.group;
+    if (!user || !group) return;
+
+    const { db, fsMod } = await getFirebase();
+    await fsMod.deleteDoc(fsMod.doc(db, 'groups', group.id, 'members', user.uid));
+    await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), { currentGroupId: null }, { merge: true });
+
+    this._teardownGroup();
+    this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+  }
+
+  async updateGroupProfile(patch) {
+    const group = this._state.group;
+    if (!group) throw new Error('Chưa chọn nhóm');
+    const { db, fsMod } = await getFirebase();
+    await fsMod.updateDoc(fsMod.doc(db, 'groups', group.id), patch);
+  }
+
+  // ---- Transactions ----
+  async addTransaction({ type, amount, note, category, memberUid }) {
+    const user = this._state.user;
+    const group = this._state.group;
+    if (!user || !group) throw new Error('Chưa sẵn sàng');
+
+    const actualMemberUid = memberUid || user.uid;
+    const member = this.getMemberByUid(actualMemberUid) || { displayName: user.displayName };
+
+    const { db, fsMod } = await getFirebase();
+    const txRef = fsMod.doc(fsMod.collection(db, 'groups', group.id, 'transactions'));
+    await fsMod.setDoc(txRef, {
+      type,
+      amount: Number(amount) || 0,
+      note: String(note || '').slice(0, 200),
+      category: category || 'other',
+      memberUid: actualMemberUid,
+      memberName: member.displayName || 'Ẩn danh',
+      date: new Date().toISOString(),
+      createdBy: user.uid,
+    });
+  }
+
+  async deleteTransaction(id) {
+    const group = this._state.group;
+    if (!group) return;
+    const { db, fsMod } = await getFirebase();
+    await fsMod.deleteDoc(fsMod.doc(db, 'groups', group.id, 'transactions', id));
+  }
+
+  // ---- Internal: attach group listeners ----
+  async _attachGroup(groupId) {
+    this._teardownGroup();
+    const { db, fsMod } = await getFirebase();
+
+    const groupRef = fsMod.doc(db, 'groups', groupId);
+    this._unsubGroup = fsMod.onSnapshot(
+      groupRef,
+      (snap) => {
+        if (!snap.exists()) {
+          // Group disappeared → reset
+          this._teardownGroup();
+          this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+          return;
+        }
+        const group = { id: snap.id, ...snap.data() };
+        this._set({ group, status: 'ready' });
+      },
+      (err) => {
+        console.error('[store] group snapshot error:', err);
+        this._set({ error: 'Không truy cập được nhóm. Có thể bạn đã bị xoá khỏi nhóm.', group: null, members: [], transactions: [], status: 'no-group' });
+      }
+    );
+
+    this._unsubMembers = fsMod.onSnapshot(
+      fsMod.collection(db, 'groups', groupId, 'members'),
+      (snap) => {
+        const members = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        this._set({ members });
+      }
+    );
+
+    const txQuery = fsMod.query(
+      fsMod.collection(db, 'groups', groupId, 'transactions'),
+      fsMod.orderBy('date', 'desc'),
+      fsMod.limit(500),
+    );
+    this._unsubTransactions = fsMod.onSnapshot(txQuery, (snap) => {
+      const transactions = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      this._set({ transactions });
+    });
+  }
+
+  _teardownGroup() {
+    if (this._unsubGroup)        { this._unsubGroup();        this._unsubGroup = null; }
+    if (this._unsubMembers)      { this._unsubMembers();      this._unsubMembers = null; }
+    if (this._unsubTransactions) { this._unsubTransactions(); this._unsubTransactions = null; }
+  }
+}
+
+function generateInviteCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // avoid I/O/0/1
+  let out = '';
+  for (let i = 0; i < 6; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+export const store = new Store();

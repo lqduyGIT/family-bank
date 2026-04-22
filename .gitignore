@@ -4,3 +4,7 @@ node_modules/
 .vscode/
 .idea/
 *.log
+
+# Firebase runtime config (loaded at runtime from ./.env)
+.env
+.env.local

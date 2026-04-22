@@ -5,12 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#059669" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="description" content="Sổ ghi chú quản lý tài chính gia đình kèm QR ngân hàng" />
   <title>Family Bank — Quỹ Gia Đình</title>
 
-  <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
 
-  <!-- Font Awesome -->
   <link
     rel="stylesheet"
     href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
@@ -19,522 +18,66 @@
     referrerpolicy="no-referrer"
   />
 
-  <!-- Google Font: Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-    rel="stylesheet"
-  />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
 
-  <style>
-    :root {
-      --bg: #f1f5f9;
-      --surface: #f8fafc;
-      --ink: #0f172a;
-    }
-
-    * { -webkit-tap-highlight-color: transparent; }
-
-    html, body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      background: linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
-      color: var(--ink);
-    }
-
-    /* ---- Phone frame (mobile-first, centered on desktop) ---- */
-    .phone-frame {
-      max-width: 400px;
-      margin: 0 auto;
-      min-height: 100vh;
-      background: var(--surface);
-      position: relative;
-      box-shadow: 0 0 60px rgba(15, 23, 42, 0.08);
-    }
-
-    @media (min-width: 640px) {
-      .phone-frame {
-        min-height: calc(100vh - 40px);
-        margin-top: 20px;
-        margin-bottom: 20px;
-        border-radius: 36px;
-        overflow: hidden;
-        border: 1px solid rgba(148, 163, 184, 0.2);
-      }
-    }
-
-    /* ---- Neumorphism ---- */
-    .neu {
-      background: #f8fafc;
-      box-shadow:
-        6px 6px 14px rgba(148, 163, 184, 0.25),
-        -6px -6px 14px rgba(255, 255, 255, 0.95);
-    }
-
-    .neu-soft {
-      background: #ffffff;
-      box-shadow:
-        0 10px 30px -10px rgba(15, 23, 42, 0.1),
-        0 2px 6px rgba(15, 23, 42, 0.04);
-    }
-
-    .neu-inset:active {
-      box-shadow:
-        inset 4px 4px 8px rgba(148, 163, 184, 0.2),
-        inset -4px -4px 8px rgba(255, 255, 255, 0.9);
-    }
-
-    /* ---- Main card (credit-card style) ---- */
-    .card-gradient {
-      background:
-        radial-gradient(circle at 0% 0%, rgba(255,255,255,0.18) 0%, transparent 40%),
-        radial-gradient(circle at 100% 100%, rgba(255,255,255,0.08) 0%, transparent 40%),
-        linear-gradient(135deg, #064e3b 0%, #047857 40%, #059669 75%, #10b981 100%);
-      box-shadow:
-        0 20px 40px -12px rgba(5, 150, 105, 0.45),
-        0 8px 16px -8px rgba(5, 150, 105, 0.3);
-    }
-
-    .card-decor::before {
-      content: '';
-      position: absolute;
-      width: 220px;
-      height: 220px;
-      background: rgba(255, 255, 255, 0.06);
-      border-radius: 50%;
-      top: -60px;
-      right: -60px;
-    }
-    .card-decor::after {
-      content: '';
-      position: absolute;
-      width: 160px;
-      height: 160px;
-      background: rgba(255, 255, 255, 0.05);
-      border-radius: 50%;
-      bottom: -50px;
-      left: 30px;
-    }
-
-    /* ---- EMV chip ---- */
-    .chip {
-      width: 38px;
-      height: 28px;
-      border-radius: 6px;
-      background: linear-gradient(135deg, #fde68a 0%, #f59e0b 60%, #b45309 100%);
-      position: relative;
-      box-shadow: inset 0 0 4px rgba(0,0,0,0.25);
-    }
-    .chip::before, .chip::after {
-      content: '';
-      position: absolute;
-      background: rgba(0,0,0,0.2);
-    }
-    .chip::before { inset: 4px 0; border-top: 1px solid rgba(0,0,0,0.25); border-bottom: 1px solid rgba(0,0,0,0.25); height: 1px; top: 10px; }
-    .chip::after { inset: 0 4px; border-left: 1px solid rgba(0,0,0,0.25); border-right: 1px solid rgba(0,0,0,0.25); width: 1px; left: 18px; }
-
-    /* ---- QR pulse ---- */
-    @keyframes qr-glow {
-      0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.35); transform: scale(1); }
-      50%      { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); transform: scale(1.015); }
-    }
-    .qr-pulse { animation: qr-glow 2.8s ease-out infinite; }
-
-    /* ---- Scroll ---- */
-    .smooth-scroll { scroll-behavior: smooth; }
-    .smooth-scroll::-webkit-scrollbar { width: 4px; }
-    .smooth-scroll::-webkit-scrollbar-track { background: transparent; }
-    .smooth-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
-    .smooth-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-    .hide-scrollbar::-webkit-scrollbar { display: none; }
-    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-
-    /* ---- Bottom nav active dot ---- */
-    .nav-active { color: #059669; }
-    .nav-active .nav-dot { opacity: 1; transform: scale(1); }
-    .nav-dot {
-      position: absolute;
-      bottom: -2px;
-      left: 50%;
-      transform: translateX(-50%) scale(0);
-      width: 4px;
-      height: 4px;
-      border-radius: 50%;
-      background: #059669;
-      opacity: 0;
-      transition: all .2s ease;
-    }
-
-    /* ---- Floating center button ---- */
-    .fab-ring {
-      background: conic-gradient(from 180deg, #10b981, #059669, #047857, #10b981);
-      padding: 2px;
-      border-radius: 9999px;
-    }
-  </style>
+  <link rel="stylesheet" href="./css/styles.css" />
 </head>
 
-<body class="min-h-screen">
-  <div class="phone-frame pb-28">
-
-    <!-- ============ HEADER ============ -->
-    <header class="px-5 pt-6 pb-4 flex items-center justify-between">
+<body>
+  <div id="app-root" class="phone-frame" data-status="loading">
+    <header id="app-header" class="px-5 pt-6 pb-4 flex items-center justify-between" data-only="ready">
       <div class="flex items-center gap-3">
         <div class="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-700 p-[2px]">
           <div class="w-full h-full rounded-full bg-white overflow-hidden flex items-center justify-center">
-            <img
-              src="https://api.dicebear.com/7.x/avataaars/svg?seed=BoMinh&backgroundColor=b6e3f4"
-              alt="avatar"
-              class="w-full h-full"
-            />
+            <img id="user-avatar" alt="avatar" class="w-full h-full" referrerpolicy="no-referrer" />
           </div>
         </div>
         <div>
-          <p class="text-[11px] text-slate-500 leading-none">Chào buổi sáng,</p>
-          <h1 class="text-base font-semibold text-slate-800 mt-1">Bố Minh 👋</h1>
+          <p class="text-[11px] text-slate-500 leading-none" id="greeting-text">Chào,</p>
+          <h1 class="text-base font-semibold text-slate-800 mt-1" id="user-name">—</h1>
         </div>
       </div>
-
-      <button
-        class="w-11 h-11 rounded-full bg-white neu flex items-center justify-center relative"
-        aria-label="Thông báo"
-      >
+      <button id="notification-btn" class="w-11 h-11 rounded-full bg-white neu flex items-center justify-center relative" aria-label="Thông báo">
         <i class="fa-regular fa-bell text-slate-600"></i>
-        <span class="absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white"></span>
+        <span id="notif-dot" class="hidden absolute top-2 right-2 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white"></span>
       </button>
     </header>
 
-    <!-- ============ MAIN BALANCE CARD ============ -->
-    <section class="px-5">
-      <div class="card-gradient card-decor rounded-3xl p-6 text-white relative overflow-hidden">
-        <div class="relative z-10">
-          <div class="flex justify-between items-start mb-8">
-            <div>
-              <p class="text-[10px] text-emerald-100 uppercase tracking-[0.15em]">Tổng Quỹ Gia Đình</p>
-              <p class="text-[10px] text-emerald-200/80 mt-1">Kỳ: Tháng 04 / 2026</p>
-            </div>
-            <div class="chip"></div>
-          </div>
+    <main id="view" class="pb-28"></main>
 
-          <div class="mb-8">
-            <p class="text-[32px] leading-none font-extrabold tracking-tight">
-              24,500,000
-              <span class="text-base font-medium text-emerald-100 align-top ml-1">VND</span>
-            </p>
-            <div class="flex items-center gap-2 mt-3">
-              <span class="text-[11px] bg-white/15 backdrop-blur px-2 py-0.5 rounded-full">
-                <i class="fa-solid fa-arrow-trend-up mr-1"></i> +12.5%
-              </span>
-              <p class="text-[11px] text-emerald-100/90">so với tháng trước</p>
-            </div>
-          </div>
-
-          <div class="flex justify-between items-end">
-            <div>
-              <p class="text-[9px] text-emerald-200/80 uppercase tracking-widest">Số Tài Khoản</p>
-              <p class="text-sm font-mono font-semibold tracking-widest mt-0.5">**** **** 8899</p>
-            </div>
-            <div class="text-right">
-              <p class="text-[9px] text-emerald-200/80 uppercase tracking-widest">Thủ Quỹ</p>
-              <p class="text-sm font-semibold mt-0.5">Mẹ Hoa</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ QUICK ACTIONS ============ -->
-    <section class="px-5 mt-6">
-      <div class="grid grid-cols-4 gap-3">
-        <button class="flex flex-col items-center gap-2 group">
-          <div class="w-14 h-14 rounded-2xl neu flex items-center justify-center neu-inset transition">
-            <i class="fa-solid fa-plus text-emerald-600 text-lg"></i>
-          </div>
-          <span class="text-[11px] text-slate-700 font-medium">Đóng Quỹ</span>
-        </button>
-
-        <button class="flex flex-col items-center gap-2 group">
-          <div class="w-14 h-14 rounded-2xl neu flex items-center justify-center neu-inset transition">
-            <i class="fa-solid fa-receipt text-red-500 text-lg"></i>
-          </div>
-          <span class="text-[11px] text-slate-700 font-medium">Chi Tiêu</span>
-        </button>
-
-        <button class="flex flex-col items-center gap-2 group">
-          <div class="w-14 h-14 rounded-2xl neu flex items-center justify-center neu-inset transition">
-            <i class="fa-solid fa-clock-rotate-left text-amber-500 text-lg"></i>
-          </div>
-          <span class="text-[11px] text-slate-700 font-medium">Lịch Sử</span>
-        </button>
-
-        <button class="flex flex-col items-center gap-2 group">
-          <div class="w-14 h-14 rounded-2xl neu flex items-center justify-center neu-inset transition">
-            <i class="fa-solid fa-qrcode text-indigo-600 text-lg"></i>
-          </div>
-          <span class="text-[11px] text-slate-700 font-medium">QR Code</span>
-        </button>
-      </div>
-    </section>
-
-    <!-- ============ VIETQR SECTION ============ -->
-    <section class="px-5 mt-6">
-      <div class="bg-white rounded-3xl p-5 neu-soft relative overflow-hidden">
-        <!-- Decorative blobs -->
-        <div class="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-emerald-50"></div>
-        <div class="absolute -bottom-10 -left-10 w-24 h-24 rounded-full bg-emerald-50"></div>
-
-        <div class="relative z-10">
-          <div class="flex items-center justify-between mb-4">
-            <div>
-              <h3 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
-                <i class="fa-solid fa-qrcode text-emerald-600"></i>
-                Mã VietQR Đóng Quỹ
-              </h3>
-              <p class="text-[11px] text-slate-500 mt-1">Quét để đóng quỹ tháng này</p>
-            </div>
-            <div class="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              ACTIVE
-            </div>
-          </div>
-
-          <div class="flex items-center gap-4">
-            <!-- QR Code (SVG placeholder) -->
-            <div class="qr-pulse shrink-0">
-              <div class="w-32 h-32 bg-white p-2 rounded-2xl border-2 border-emerald-100">
-                <svg viewBox="0 0 100 100" class="w-full h-full" aria-label="VietQR">
-                  <rect width="100" height="100" fill="white"/>
-                  <!-- Finder patterns -->
-                  <g fill="black">
-                    <rect x="5"  y="5"  width="25" height="25"/>
-                    <rect x="70" y="5"  width="25" height="25"/>
-                    <rect x="5"  y="70" width="25" height="25"/>
-                  </g>
-                  <g fill="white">
-                    <rect x="9"  y="9"  width="17" height="17"/>
-                    <rect x="74" y="9"  width="17" height="17"/>
-                    <rect x="9"  y="74" width="17" height="17"/>
-                  </g>
-                  <g fill="black">
-                    <rect x="13" y="13" width="9" height="9"/>
-                    <rect x="78" y="13" width="9" height="9"/>
-                    <rect x="13" y="78" width="9" height="9"/>
-                  </g>
-                  <!-- Timing + data dots -->
-                  <g fill="black">
-                    <rect x="35" y="10" width="4" height="4"/>
-                    <rect x="42" y="10" width="4" height="4"/>
-                    <rect x="49" y="10" width="4" height="4"/>
-                    <rect x="63" y="15" width="4" height="4"/>
-                    <rect x="10" y="35" width="4" height="4"/>
-                    <rect x="17" y="35" width="4" height="4"/>
-                    <rect x="31" y="35" width="4" height="4"/>
-                    <rect x="38" y="40" width="4" height="4"/>
-                    <rect x="45" y="35" width="4" height="4"/>
-                    <rect x="52" y="42" width="4" height="4"/>
-                    <rect x="59" y="35" width="4" height="4"/>
-                    <rect x="66" y="42" width="4" height="4"/>
-                    <rect x="80" y="40" width="4" height="4"/>
-                    <rect x="88" y="35" width="4" height="4"/>
-                    <rect x="10" y="45" width="4" height="4"/>
-                    <rect x="24" y="45" width="4" height="4"/>
-                    <rect x="35" y="50" width="4" height="4"/>
-                    <rect x="42" y="45" width="4" height="4"/>
-                    <rect x="56" y="50" width="4" height="4"/>
-                    <rect x="70" y="48" width="4" height="4"/>
-                    <rect x="80" y="50" width="4" height="4"/>
-                    <rect x="17" y="55" width="4" height="4"/>
-                    <rect x="28" y="55" width="4" height="4"/>
-                    <rect x="42" y="58" width="4" height="4"/>
-                    <rect x="49" y="55" width="4" height="4"/>
-                    <rect x="63" y="58" width="4" height="4"/>
-                    <rect x="77" y="55" width="4" height="4"/>
-                    <rect x="88" y="60" width="4" height="4"/>
-                    <rect x="40" y="70" width="4" height="4"/>
-                    <rect x="50" y="75" width="4" height="4"/>
-                    <rect x="60" y="70" width="4" height="4"/>
-                    <rect x="70" y="78" width="4" height="4"/>
-                    <rect x="80" y="72" width="4" height="4"/>
-                    <rect x="88" y="78" width="4" height="4"/>
-                    <rect x="40" y="82" width="4" height="4"/>
-                    <rect x="55" y="85" width="4" height="4"/>
-                    <rect x="65" y="82" width="4" height="4"/>
-                    <rect x="75" y="88" width="4" height="4"/>
-                    <rect x="88" y="85" width="4" height="4"/>
-                  </g>
-                  <!-- Center logo -->
-                  <circle cx="50" cy="50" r="8" fill="white" stroke="#059669" stroke-width="1.5"/>
-                  <text x="50" y="53" font-family="Inter" font-size="7" font-weight="700" text-anchor="middle" fill="#059669">FB</text>
-                </svg>
-              </div>
-            </div>
-
-            <div class="flex-1 min-w-0">
-              <div class="mb-2">
-                <p class="text-[9px] text-slate-500 uppercase tracking-wider">Ngân hàng</p>
-                <p class="text-sm font-bold text-slate-800">Vietcombank</p>
-              </div>
-              <div class="mb-3">
-                <p class="text-[9px] text-slate-500 uppercase tracking-wider">Số tài khoản</p>
-                <p class="text-[13px] font-mono font-semibold text-slate-800">0123 456 8899</p>
-              </div>
-              <button
-                class="w-full text-xs bg-emerald-600 text-white font-semibold py-2 rounded-xl hover:bg-emerald-700 active:bg-emerald-800 transition flex items-center justify-center gap-1.5"
-              >
-                <i class="fa-solid fa-share-nodes text-[10px]"></i>
-                Chia sẻ QR
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ RECENT TRANSACTIONS ============ -->
-    <section class="px-5 mt-6">
-      <div class="flex items-center justify-between mb-3">
-        <h3 class="text-base font-semibold text-slate-800">Giao dịch gần đây</h3>
-        <button class="text-xs text-emerald-600 font-semibold flex items-center gap-1">
-          Xem tất cả <i class="fa-solid fa-arrow-right text-[10px]"></i>
-        </button>
-      </div>
-
-      <div class="bg-white rounded-3xl p-2 neu-soft">
-        <div class="smooth-scroll max-h-80 overflow-y-auto pr-1">
-          <!-- 1 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Bố Minh đóng quỹ</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">Hôm nay, 08:30</p>
-            </div>
-            <p class="text-sm font-bold text-emerald-600 shrink-0">+2,000,000</p>
-          </div>
-
-          <!-- 2 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-pink-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-gift text-pink-500"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Sinh nhật bà nội</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">Hôm qua, 14:20</p>
-            </div>
-            <p class="text-sm font-bold text-red-500 shrink-0">-500,000</p>
-          </div>
-
-          <!-- 3 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-cart-shopping text-blue-500"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Đi siêu thị Coopmart</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">20/04/2026, 18:45</p>
-            </div>
-            <p class="text-sm font-bold text-red-500 shrink-0">-850,000</p>
-          </div>
-
-          <!-- 4 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Mẹ Hoa đóng quỹ</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">19/04/2026, 09:15</p>
-            </div>
-            <p class="text-sm font-bold text-emerald-600 shrink-0">+2,000,000</p>
-          </div>
-
-          <!-- 5 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-orange-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-utensils text-orange-500"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Ăn tối cả nhà</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">18/04/2026, 19:30</p>
-            </div>
-            <p class="text-sm font-bold text-red-500 shrink-0">-650,000</p>
-          </div>
-
-          <!-- 6 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-hand-holding-dollar text-emerald-600"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Anh Tuấn đóng quỹ</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">15/04/2026, 20:00</p>
-            </div>
-            <p class="text-sm font-bold text-emerald-600 shrink-0">+1,500,000</p>
-          </div>
-
-          <!-- 7 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-yellow-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-bolt text-yellow-500"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Tiền điện tháng 3</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">10/04/2026, 08:00</p>
-            </div>
-            <p class="text-sm font-bold text-red-500 shrink-0">-1,200,000</p>
-          </div>
-
-          <!-- 8 -->
-          <div class="flex items-center gap-3 p-3 rounded-2xl hover:bg-slate-50 transition cursor-pointer">
-            <div class="w-11 h-11 rounded-xl bg-violet-50 flex items-center justify-center shrink-0">
-              <i class="fa-solid fa-graduation-cap text-violet-500"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-semibold text-slate-800 truncate">Học phí em Bo</p>
-              <p class="text-[11px] text-slate-500 mt-0.5">05/04/2026, 10:00</p>
-            </div>
-            <p class="text-sm font-bold text-red-500 shrink-0">-3,500,000</p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============ BOTTOM NAVIGATION ============ -->
     <nav
+      id="bottom-nav"
       class="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-[400px] bg-white/85 backdrop-blur-xl border-t border-slate-100 px-6 py-3 pb-[max(12px,env(safe-area-inset-bottom))]"
       style="border-radius: 0 0 36px 36px;"
+      data-only="ready"
     >
       <div class="flex justify-around items-end">
-        <button class="relative flex flex-col items-center gap-1 nav-active" aria-label="Trang chủ">
+        <button data-tab="home" class="nav-btn relative flex flex-col items-center gap-1 nav-active" aria-label="Trang chủ">
           <i class="fa-solid fa-house text-lg"></i>
           <span class="text-[10px] font-semibold">Trang chủ</span>
           <span class="nav-dot"></span>
         </button>
-
-        <button class="relative flex flex-col items-center gap-1 text-slate-400" aria-label="Thống kê">
+        <button data-tab="stats" class="nav-btn relative flex flex-col items-center gap-1 text-slate-400" aria-label="Thống kê">
           <i class="fa-solid fa-chart-simple text-lg"></i>
           <span class="text-[10px] font-medium">Thống kê</span>
           <span class="nav-dot"></span>
         </button>
-
-        <!-- Floating QR scanner button -->
-        <button class="relative flex flex-col items-center gap-1 text-slate-400" aria-label="Quét QR">
+        <button data-tab="scan" class="nav-btn relative flex flex-col items-center gap-1 text-slate-400" aria-label="Thao tác nhanh">
           <div class="absolute -top-10 fab-ring">
             <div class="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 flex items-center justify-center shadow-lg shadow-emerald-500/40">
-              <i class="fa-solid fa-qrcode text-white text-xl"></i>
+              <i class="fa-solid fa-bolt text-white text-xl"></i>
             </div>
           </div>
-          <span class="text-[10px] font-medium mt-8">Quét QR</span>
+          <span class="text-[10px] font-medium mt-8">Nhanh</span>
         </button>
-
-        <button class="relative flex flex-col items-center gap-1 text-slate-400" aria-label="Gia đình">
+        <button data-tab="family" class="nav-btn relative flex flex-col items-center gap-1 text-slate-400" aria-label="Gia đình">
           <i class="fa-solid fa-users text-lg"></i>
           <span class="text-[10px] font-medium">Gia đình</span>
           <span class="nav-dot"></span>
         </button>
-
-        <button class="relative flex flex-col items-center gap-1 text-slate-400" aria-label="Cài đặt">
+        <button data-tab="settings" class="nav-btn relative flex flex-col items-center gap-1 text-slate-400" aria-label="Cài đặt">
           <i class="fa-solid fa-gear text-lg"></i>
           <span class="text-[10px] font-medium">Cài đặt</span>
           <span class="nav-dot"></span>
@@ -543,18 +86,9 @@
     </nav>
   </div>
 
-  <script>
-    // Tab switching (visual only — prototype)
-    document.querySelectorAll('nav button[aria-label]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        document.querySelectorAll('nav button[aria-label]').forEach((b) => {
-          b.classList.remove('nav-active');
-          b.classList.add('text-slate-400');
-        });
-        btn.classList.add('nav-active');
-        btn.classList.remove('text-slate-400');
-      });
-    });
-  </script>
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+
+  <script type="module" src="./js/main.js"></script>
 </body>
 </html>
