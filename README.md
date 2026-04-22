@@ -34,22 +34,3 @@ Sau đó mở trình duyệt: `http://localhost:8080` — khuyến nghị bật 
 | **Recent Transactions** | Danh sách scrollable — 8 giao dịch mẫu                       |
 | **Bottom Navigation**   | 5 tab với FAB trung tâm (Quét QR)                            |
 
-## Design tokens
-
-- **Primary**: `emerald-600` (#059669)
-- **Surface**: `slate-50` (#f8fafc)
-- **Effects**: Neumorphism nhẹ + Glassmorphism cho bottom nav
-- **Max width**: 400px (mobile-first, canh giữa trên desktop)
-
-## Link lên GitHub
-
-```bash
-git init
-git add .
-git commit -m "init: Family Bank prototype"
-git branch -M main
-git remote add origin https://github.com/<YOUR_USER>/family-bank.git
-git push -u origin main
-```
-
-Để deploy nhanh, bật **GitHub Pages** → Settings → Pages → Source: `main` branch `/root`.
