@@ -204,15 +204,29 @@ export async function runQuickTransfer() {
     note: `Dong quy thang ${new Date().getMonth() + 1}`,
   });
 
-  // Step 1: save QR to device (share sheet on iOS → Save to Photos)
-  toast('Đang lưu QR vào ảnh...', 'info');
+  // Step 1: surface the QR as a sharable image. On iOS/Android this shows
+  // the native share sheet with a "Save Image" / "Save to gallery" option
+  // → the QR lands directly in Photos / Gallery (not Downloads).
   const filename = `VietQR-${group.bankCode}-${(group.accountNumber || '').slice(-4)}.png`;
-  try { await saveImageAs(qrUrl, filename); }
-  catch (e) { console.warn('[quickTransfer] save QR failed:', e); }
+  const saveResult = await saveImageAs(qrUrl, filename).catch((e) => {
+    console.warn('[quickTransfer] save QR failed:', e);
+    return 'failed';
+  });
 
-  // Step 2: open preferred bank app after a short delay so the toast shows
+  if (saveResult === 'cancelled') {
+    // User dismissed share sheet → don't open bank app (likely changed mind)
+    toast('Đã huỷ lưu QR', 'info');
+    return;
+  }
+
+  if (saveResult === 'opened') {
+    toast('Giữ & chọn "Lưu vào Ảnh" trên tab mới', 'info');
+    return;
+  }
+
+  // Step 2: open preferred bank app — user now has QR in their Photos
   setTimeout(() => {
-    toast(`Mở ${bank.name} → Quét QR → Chọn từ thư viện`, 'success');
+    toast(`Mở ${bank.name} → Quét QR → Từ thư viện`, 'success');
     openBankApp(bank);
   }, 400);
 }

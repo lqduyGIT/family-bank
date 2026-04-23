@@ -154,39 +154,85 @@ export function openBankApp({ appCode }) {
   window.location.href = getBankDeepLink({ appCode });
 }
 
-// Download an image URL as a file — uses navigator.share on iOS if possible
-// (lets user save to Photos), otherwise falls back to <a download>.
-export async function saveImageAs(url, filename = 'qr.png') {
+// Fetch an image URL into a local Blob. Tries HTTPS fetch first; if CORS
+// blocks, falls back to loading the image into a canvas (which still works
+// when the server sends Access-Control-Allow-Origin: * for the image bytes).
+async function urlToImageBlob(url) {
   try {
-    const res = await fetch(url, { mode: 'cors' });
-    if (!res.ok) throw new Error(`fetch failed ${res.status}`);
-    const blob = await res.blob();
+    const res = await fetch(url, { mode: 'cors', cache: 'no-cache' });
+    if (res.ok) return await res.blob();
+  } catch {/* try canvas next */}
 
-    // Prefer native share sheet on mobile (iOS Safari supports files)
-    if (navigator.canShare) {
-      const file = new File([blob], filename, { type: blob.type || 'image/png' });
-      if (navigator.canShare({ files: [file] })) {
-        try { await navigator.share({ files: [file], title: filename }); return 'shared'; }
-        catch {/* user cancelled — fall through to download */}
-      }
-    }
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const timeout = setTimeout(() => reject(new Error('timeout')), 8000);
+    img.onload = () => {
+      clearTimeout(timeout);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width  = img.naturalWidth  || 400;
+        canvas.height = img.naturalHeight || 400;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        canvas.toBlob((blob) => {
+          if (blob) resolve(blob);
+          else reject(new Error('canvas-tainted'));
+        }, 'image/png', 0.95);
+      } catch (e) { reject(e); }
+    };
+    img.onerror = () => { clearTimeout(timeout); reject(new Error('image-load-failed')); };
+    img.src = url;
+  });
+}
 
-    // Fallback: trigger <a download>
-    const objectUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = objectUrl;
-    a.download = filename;
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
-    return 'downloaded';
-  } catch (e) {
-    // CORS / network — open in new tab so user can long-press to save
+// Save an image URL to the user's photo library / gallery. Uses the Web
+// Share API (navigator.share) with a File, which on iOS/Android surfaces
+// the native share sheet with "Save to Photos" / "Save to Gallery" — files
+// land directly in the user's photo library, NOT Downloads.
+//
+// Returns:
+//   'shared'    — share sheet opened (user may have tapped Save or anything)
+//   'cancelled' — user dismissed share sheet
+//   'opened'    — CORS blocked bytes; opened in new tab so user can long-press
+//   'downloaded'— very old browser without share-files; fell back to download
+export async function saveImageAs(url, filename = 'qr.png') {
+  let blob;
+  try {
+    blob = await urlToImageBlob(url);
+  } catch {
+    // Bytes unreachable (CORS or network) — open in a new tab so the user
+    // can long-press the image and pick "Save Image" natively.
     window.open(url, '_blank', 'noopener');
     return 'opened';
   }
+
+  const file = new File([blob], filename, { type: blob.type || 'image/png' });
+
+  // Preferred path on iOS 15+ and Android Chrome: native share sheet shows
+  // "Save Image" (iOS) / "Save to gallery" (Android) — goes straight to
+  // the photo library.
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file] });
+      return 'shared';
+    } catch (err) {
+      if (err?.name === 'AbortError') return 'cancelled';
+      // fall through to download
+    }
+  }
+
+  // Last resort for browsers without Web Share files support — this lands
+  // in the Downloads folder (not the gallery), so only used when truly
+  // nothing else works.
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  return 'downloaded';
 }
 
 // Common Vietnamese bank codes (subset) — used for <select> in settings
