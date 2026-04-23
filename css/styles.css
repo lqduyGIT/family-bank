@@ -42,6 +42,26 @@ html, body {
   box-shadow: 0 0 60px rgba(15, 23, 42, 0.08);
 }
 
+/* Emerald strip that sits under the iPhone notch / iOS status bar region.
+   PWA standalone mode uses <meta apple-mobile-web-app-status-bar-style
+   = "black-translucent"> so the status bar is transparent and its white
+   time/battery icons overlay the top of our app. This strip gives those
+   icons a solid emerald backdrop (matching <meta theme-color>), keeping
+   them readable in every screen — login, group-gate, and the home tabs. */
+.phone-frame::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: env(safe-area-inset-top);
+  background: #059669;
+  z-index: 45;
+  pointer-events: none;
+}
+
+@media (min-width: 640px) {
+  .phone-frame::before { border-radius: 36px 36px 0 0; }
+}
+
 /* Tablet & small desktop (≥640px): centred with margin + rounded frame */
 @media (min-width: 640px) {
   body { display: flex; align-items: center; justify-content: center; }
@@ -320,16 +340,16 @@ html, body {
    rubber-band bounce from ever reaching body, so users never see blank
    space above the header or below the nav. */
 
-/* Header: static top bar, never scrolls. Picks up iPhone notch inset. */
+/* Header: static top bar, never scrolls. The safe-area strip above the
+   header is painted emerald by .phone-frame::before so we don't need to
+   handle it here — just push the content down past the safe-area. */
 #app-root[data-status="ready"] #app-header {
   flex: 0 0 auto;
-  background: rgba(248, 250, 252, 0.98);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  padding-top: max(24px, calc(env(safe-area-inset-top) + 10px));
   position: relative;
   z-index: 40;
+  background: rgba(248, 250, 252, 0.98);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.12);
+  padding-top: calc(env(safe-area-inset-top) + 16px);
 }
 
 /* The only scrollable area inside the phone frame. */
