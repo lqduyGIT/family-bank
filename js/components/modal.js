@@ -65,8 +65,12 @@ export function confirmDialog({ title = 'Xác nhận', message = '', confirmText
         </div>
       `,
       onMount: (sheet) => {
-        sheet.querySelector('[data-act="cancel"]').addEventListener('click', () => { closeModal(); resolve(false); });
-        sheet.querySelector('[data-act="confirm"]').addEventListener('click', () => { closeModal(); resolve(true); });
+        // IMPORTANT: resolve() must fire BEFORE closeModal().
+        // closeModal() triggers currentOnClose → resolve(false). If we close
+        // first, the Promise locks to `false` and the real decision is lost,
+        // so the caller sees "cancel" even when user clicked Confirm.
+        sheet.querySelector('[data-act="cancel"]').addEventListener('click', () => { resolve(false); closeModal(); });
+        sheet.querySelector('[data-act="confirm"]').addEventListener('click', () => { resolve(true); closeModal(); });
       },
       onClose: () => resolve(false),
     });
