@@ -165,15 +165,10 @@ export async function openQRDetail() {
   });
 }
 
-// ⚡ Quick Transfer — pure deep-link flow.
-// Builds the VietQR EMV string locally and hands it (plus receiver/amount/
-// note) to the bank app via the VietQR deep-link router. Banks that
-// recognise the payment-context params jump straight to their
-// transfer-confirm screen; banks that ignore them open to their home
-// screen — in both cases the user never leaves the bank-app tab.
-export async function runQuickTransfer() {
-  const state = store.getState();
-  const { group, preferredBankCode } = state;
+// ⚡ Quick Transfer — direct jump to user's preferred bank app.
+// No redirect page, no share sheet, no QR save. Just: validate → launch.
+export function runQuickTransfer() {
+  const { group, preferredBankCode } = store.getState();
   if (!group) return;
 
   if (!group.bankCode || !group.accountNumber) {
@@ -192,26 +187,8 @@ export async function runQuickTransfer() {
     return;
   }
 
-  const bankBin = group.bankBin || await resolveBankBin(group.bankCode);
-  const addInfo = `Dong quy thang ${new Date().getMonth() + 1}`;
-  const emv = bankBin
-    ? buildVietQrEmv({
-        bankBin,
-        accountNumber: group.accountNumber,
-        amount: group.monthlyTarget || 0,
-        addInfo,
-      })
-    : '';
-
   toast(`Mở ${bank.name}...`, 'info');
-  openBankApp(bank, {
-    emv,
-    bankBin,
-    accountNumber: group.accountNumber,
-    accountName: group.accountHolder,
-    amount: group.monthlyTarget || 0,
-    addInfo,
-  });
+  openBankApp(bank);
 }
 
 // ---- Render helpers ----
