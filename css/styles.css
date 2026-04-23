@@ -137,6 +137,7 @@ html, body {
   background: conic-gradient(from 180deg, #10b981, #059669, #047857, #10b981);
   padding: 2px;
   border-radius: 9999px;
+  z-index: 51; /* Above bottom-nav (z-50) so it sits on top of all scroll content */
 }
 
 /* ---- Modal ---- */
