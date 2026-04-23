@@ -165,10 +165,12 @@ export async function openQRDetail() {
   });
 }
 
-// ⚡ Quick Transfer — 1-tap flow using user's preferred bank.
-// 1. If no preferred bank configured → prompt user to configure in Settings
-// 2. Save QR image to device (so user can scan from Photos in their bank app)
-// 3. Open preferred bank app
+// ⚡ Quick Transfer — pure deep-link flow.
+// Builds the VietQR EMV string locally and hands it (plus receiver/amount/
+// note) to the bank app via the VietQR deep-link router. Banks that
+// recognise the payment-context params jump straight to their
+// transfer-confirm screen; banks that ignore them open to their home
+// screen — in both cases the user never leaves the bank-app tab.
 export async function runQuickTransfer() {
   const state = store.getState();
   const { group, preferredBankCode } = state;
@@ -190,8 +192,6 @@ export async function runQuickTransfer() {
     return;
   }
 
-  // Resolve the receiver bank BIN — needed both for local QR rendering and
-  // for the deep-link payment-context URL.
   const bankBin = group.bankBin || await resolveBankBin(group.bankCode);
   const addInfo = `Dong quy thang ${new Date().getMonth() + 1}`;
   const emv = bankBin
@@ -203,43 +203,15 @@ export async function runQuickTransfer() {
       })
     : '';
 
-  // Step 1: save the QR to the user's photo library so they can scan it
-  // from inside the bank app as a last-resort fallback (in case the
-  // deep-link context params aren't honoured by the bank).
-  const qrSrc = (await resolveQrImageSrc(group)) || '';
-  const filename = `VietQR-${group.bankCode}-${(group.accountNumber || '').slice(-4)}.png`;
-  const saveResult = qrSrc
-    ? await saveImageAs(qrSrc, filename).catch((e) => {
-        console.warn('[quickTransfer] save QR failed:', e);
-        return 'failed';
-      })
-    : 'failed';
-
-  if (saveResult === 'cancelled') {
-    toast('Đã huỷ lưu QR', 'info');
-    return;
-  }
-
-  if (saveResult === 'opened') {
-    toast('Giữ & chọn "Lưu vào Ảnh" trên tab mới', 'info');
-    return;
-  }
-
-  // Step 2: open the preferred bank app, passing payment context via the
-  // VietQR deep-link router. Banks that honour the params will jump
-  // straight to the transfer-confirm screen; banks that ignore them will
-  // open to their home screen and the user can scan the just-saved QR.
-  setTimeout(() => {
-    toast(`Mở ${bank.name}...`, 'success');
-    openBankApp(bank, {
-      emv,
-      bankBin,
-      accountNumber: group.accountNumber,
-      accountName: group.accountHolder,
-      amount: group.monthlyTarget || 0,
-      addInfo,
-    });
-  }, 400);
+  toast(`Mở ${bank.name}...`, 'info');
+  openBankApp(bank, {
+    emv,
+    bankBin,
+    accountNumber: group.accountNumber,
+    accountName: group.accountHolder,
+    amount: group.monthlyTarget || 0,
+    addInfo,
+  });
 }
 
 // ---- Render helpers ----
