@@ -37,7 +37,7 @@ export function render(mount) {
           <li>Mỗi người đăng nhập Google cá nhân</li>
           <li>Một người tạo <strong>nhóm gia đình</strong> và chia sẻ mã mời</li>
           <li>Các thành viên khác nhập mã → tham gia → cùng theo dõi quỹ</li>
-          <li>Mọi giao dịch đều đồng bộ real-time qua Firebase</li>
+          <li>Mọi giao dịch đồng bộ real-time giữa các thiết bị trong nhóm</li>
         </ul>
       </div>
     </section>

@@ -170,29 +170,57 @@ async function saveProfile(mount) {
 }
 
 async function leaveGroup() {
-  const group = store.getGroup();
+  const state = store.getState();
+  const group = state.group;
+  const user = state.user;
+  const members = state.members;
+  if (!group || !user) return;
+
+  const isOwner = group.ownerUid === user.uid;
+  const others = members.filter((m) => m.uid !== user.uid);
+
+  let title, message;
+  if (isOwner && others.length === 0) {
+    title = '⚠ Xoá nhóm vĩnh viễn?';
+    message = `Bạn là thành viên cuối cùng của "${group.name}". Rời đi sẽ <strong>xoá nhóm và toàn bộ lịch sử giao dịch</strong>. Hành động không thể hoàn tác.`;
+  } else if (isOwner && others.length > 0) {
+    const nextOwner = [...others].sort((a, b) => new Date(a.joinedAt || 0) - new Date(b.joinedAt || 0))[0];
+    title = 'Chuyển quyền chủ nhóm?';
+    message = `Bạn là chủ nhóm "${group.name}". Rời đi → quyền quản lý sẽ chuyển cho <strong>${nextOwner.displayName || 'Ẩn danh'}</strong> (thành viên tham gia sớm nhất). Bạn có thể tham gia lại bằng mã mời, nhưng sẽ thành thành viên thường.`;
+  } else {
+    title = 'Rời khỏi nhóm?';
+    message = `Bạn sẽ không còn thấy giao dịch của "${group.name}". Có thể tham gia lại bằng mã mời sau.`;
+  }
+
   const ok = await confirmDialog({
-    title: 'Rời khỏi nhóm?',
-    message: `Bạn sẽ không còn thấy giao dịch của "${group?.name || 'nhóm'}". Có thể tham gia lại bằng mã mời sau.`,
-    confirmText: 'Rời nhóm',
+    title, message,
+    confirmText: isOwner && others.length === 0 ? 'Xoá nhóm' : 'Rời nhóm',
     danger: true,
   });
   if (!ok) return;
+
   try {
     await store.leaveGroup();
-    toast('Đã rời nhóm', 'info');
+    toast(isOwner && others.length === 0 ? 'Đã xoá nhóm' : 'Đã rời nhóm', 'info');
   } catch (err) {
-    toast(err.message || 'Không rời được', 'error');
+    console.error(err);
+    toast(err.message || 'Không rời được — thử lại', 'error');
   }
 }
 
 async function signOut() {
   const ok = await confirmDialog({
     title: 'Đăng xuất?',
-    message: 'Dữ liệu vẫn an toàn trên Firebase. Đăng nhập lại sẽ thấy ngay.',
+    message: 'Dữ liệu vẫn an toàn trên máy chủ. Đăng nhập lại với cùng tài khoản Google sẽ thấy ngay.',
     confirmText: 'Đăng xuất',
     danger: true,
   });
   if (!ok) return;
-  await store.signOut();
+  try {
+    await store.signOut();
+    toast('Đã đăng xuất', 'info');
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Đăng xuất thất bại', 'error');
+  }
 }

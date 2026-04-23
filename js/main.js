@@ -211,9 +211,9 @@ async function renderSetupRequired() {
       <div class="w-20 h-20 mx-auto rounded-3xl bg-amber-100 flex items-center justify-center mb-4">
         <i class="fa-solid fa-screwdriver-wrench text-amber-600 text-3xl"></i>
       </div>
-      <h1 class="text-xl font-bold text-center text-slate-800 mb-2">Cần cấu hình Firebase</h1>
+      <h1 class="text-xl font-bold text-center text-slate-800 mb-2">Cần thiết lập kết nối</h1>
       <p class="text-sm text-slate-500 text-center mb-5">
-        App đọc cấu hình từ file <code class="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">.env</code> cùng thư mục <code class="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">index.html</code>.
+        App chưa nhận được cấu hình máy chủ. Kiểm tra file <code class="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">.env</code> cùng thư mục <code class="bg-slate-100 px-1.5 py-0.5 rounded text-[12px]">index.html</code>.
       </p>
 
       <div class="bg-white border border-slate-200 rounded-2xl p-4 mb-4">
@@ -263,8 +263,8 @@ python -m http.server 8080</pre>
 
       <div class="flex gap-2">
         <button onclick="location.reload()" class="fb-btn fb-btn-ghost flex-1"><i class="fa-solid fa-rotate-right mr-1"></i> Reload</button>
-        <a href="https://console.firebase.google.com" target="_blank" rel="noopener" class="fb-btn fb-btn-primary flex-1 inline-flex items-center justify-center">
-          <i class="fa-solid fa-up-right-from-square mr-2"></i> Firebase Console
+        <a href="https://github.com/lqduyGIT/family-bank#readme" target="_blank" rel="noopener" class="fb-btn fb-btn-primary flex-1 inline-flex items-center justify-center">
+          <i class="fa-solid fa-book-open mr-2"></i> Xem hướng dẫn
         </a>
       </div>
     </section>
@@ -308,7 +308,7 @@ function renderFatal(err) {
   $('#view').innerHTML = `
     <section class="px-6 pt-10 text-center">
       <i class="fa-solid fa-triangle-exclamation text-red-500 text-3xl mb-3"></i>
-      <p class="text-sm text-slate-700 font-semibold">Không khởi tạo được Firebase</p>
+      <p class="text-sm text-slate-700 font-semibold">Không kết nối được máy chủ</p>
       <p class="text-xs text-slate-500 mt-2">${escapeHtml(err.message || String(err))}</p>
     </section>
   `;

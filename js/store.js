@@ -98,7 +98,23 @@ class Store {
   }
 
   async signOut() {
+    // Clear local caches scoped to this app (banks list, etc.) but keep
+    // Firebase SDK's IndexedDB since auth state will be reset properly.
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('family-bank:')) localStorage.removeItem(key);
+      }
+    } catch {}
+
+    this._teardownGroup();
+    this._set({
+      status: 'loading', user: null, group: null,
+      members: [], transactions: [], error: null,
+    });
+
     await authSignOut();
+    // onAuthChange will fire next and transition status → 'anonymous'
   }
 
   // ---- Group actions ----
@@ -173,11 +189,49 @@ class Store {
   async leaveGroup() {
     const user = this._state.user;
     const group = this._state.group;
+    const members = this._state.members;
     if (!user || !group) return;
 
     const { db, fsMod } = await getFirebase();
-    await fsMod.deleteDoc(fsMod.doc(db, 'groups', group.id, 'members', user.uid));
-    await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), { currentGroupId: null }, { merge: true });
+    const isOwner = group.ownerUid === user.uid;
+    const others = members.filter((m) => m.uid !== user.uid);
+
+    const batch = fsMod.writeBatch(db);
+    const userRef = fsMod.doc(db, 'users', user.uid);
+    const memberRef = fsMod.doc(db, 'groups', group.id, 'members', user.uid);
+
+    if (isOwner && others.length === 0) {
+      // Last member leaving owned group → delete group doc.
+      // Note: transactions subcollection + invite code may become orphan
+      //   (Firestore client can't recursively delete subcollections).
+      batch.delete(fsMod.doc(db, 'groups', group.id));
+      batch.set(userRef, { currentGroupId: null }, { merge: true });
+    } else if (isOwner && others.length > 0) {
+      // Transfer ownership to the oldest remaining member, then leave.
+      const nextOwner = [...others].sort(
+        (a, b) => new Date(a.joinedAt || 0) - new Date(b.joinedAt || 0)
+      )[0];
+      batch.update(fsMod.doc(db, 'groups', group.id), { ownerUid: nextOwner.uid });
+      batch.delete(memberRef);
+      batch.set(userRef, { currentGroupId: null }, { merge: true });
+    } else {
+      // Plain member leaving
+      batch.delete(memberRef);
+      batch.set(userRef, { currentGroupId: null }, { merge: true });
+    }
+
+    await batch.commit();
+
+    // Best-effort cleanup of invite code when deleting the group.
+    // Runs outside the batch so a permission error (e.g. caused by ownership
+    // transfer history) doesn't block the main leave action.
+    if (isOwner && others.length === 0 && group.inviteCode) {
+      try {
+        await fsMod.deleteDoc(fsMod.doc(db, 'inviteCodes', group.inviteCode));
+      } catch (e) {
+        console.warn('[store] invite code cleanup skipped:', e.message);
+      }
+    }
 
     this._teardownGroup();
     this._set({ group: null, members: [], transactions: [], status: 'no-group' });
