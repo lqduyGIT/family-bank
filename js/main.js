@@ -61,7 +61,6 @@ async function onStateChange(state) {
   } else if (state.status === 'ready') {
     // Only re-render tab when first entering ready
     if (lastStatus !== 'ready') {
-      currentTab = 'home';
       setActiveTabButton('home');
       await renderTab('home');
     }
@@ -103,7 +102,6 @@ function bindTabs() {
       const tab = btn.dataset.tab;
       if (tab === 'scan') return handleFastActions();
       setActiveTabButton(tab);
-      currentTab = tab;
       window.scrollTo({ top: 0, behavior: 'smooth' });
       await renderTab(tab);
     });
