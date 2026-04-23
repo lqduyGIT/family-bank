@@ -271,14 +271,14 @@ function shell() {
         <div class="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-emerald-50"></div>
         <div class="absolute -bottom-10 -left-10 w-24 h-24 rounded-full bg-emerald-50"></div>
         <div class="relative z-10">
-          <div class="flex items-center justify-between mb-4">
-            <div>
+          <div class="flex items-start justify-between mb-4 gap-2">
+            <div class="min-w-0">
               <h3 class="text-sm font-semibold text-slate-800 flex items-center gap-2"><i class="fa-solid fa-qrcode text-emerald-600"></i> Mã VietQR Đóng Quỹ</h3>
               <p class="text-[11px] text-slate-500 mt-1">Quét để đóng quỹ tháng này</p>
             </div>
-            <div class="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-full">
-              <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span> ACTIVE
-            </div>
+            <button data-share-qr class="shrink-0 text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-emerald-50 transition">
+              <i class="fa-solid fa-up-right-from-square text-[10px]"></i> Xem QR
+            </button>
           </div>
           <div class="flex items-center gap-4">
             <div class="qr-pulse shrink-0">
@@ -296,11 +296,8 @@ function shell() {
                 <p class="text-[9px] text-slate-500 uppercase tracking-wider">Số tài khoản</p>
                 <p class="text-[13px] font-mono font-semibold text-slate-800" data-qr-acct>—</p>
               </div>
-              <button data-quick-transfer class="w-full text-xs bg-gradient-to-r from-emerald-500 to-emerald-700 text-white font-bold py-2 rounded-xl hover:from-emerald-600 hover:to-emerald-800 transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/30 mb-1.5">
+              <button data-quick-transfer class="w-full text-xs bg-gradient-to-r from-emerald-500 to-emerald-700 text-white font-bold py-2.5 rounded-xl hover:from-emerald-600 hover:to-emerald-800 transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/30">
                 <i class="fa-solid fa-bolt text-[11px]"></i> Chuyển Nhanh
-              </button>
-              <button data-share-qr class="w-full text-[11px] text-slate-500 font-medium hover:text-emerald-600 transition flex items-center justify-center gap-1">
-                <i class="fa-solid fa-qrcode text-[10px]"></i> Xem QR đầy đủ
               </button>
             </div>
           </div>
