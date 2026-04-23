@@ -13,6 +13,7 @@ const EMPTY_STATE = () => ({
   members: [],        // [{ uid, displayName, photoURL, role, joinedAt }]
   transactions: [],   // [{ id, type, amount, note, category, memberUid, memberName, date }]
   myGroups: [],       // lightweight list of all groups user belongs to — [{ id, name, ownerUid, bankName, inviteCode }]
+  preferredBankCode: null,  // user's personal bank for "Chuyển Nhanh" quick-transfer button — e.g. 'MB', 'VCB'
   error: null,
 });
 
@@ -61,6 +62,9 @@ class Store {
       };
       await fsMod.setDoc(userRef, merged, { merge: true });
 
+      // Load user preferences (personal bank for Quick Transfer)
+      this._set({ preferredBankCode: existing.preferredBankCode || null });
+
       // Load user's groups list (best effort — skip broken refs)
       await this._refreshMyGroups(groupIds);
 
@@ -105,6 +109,19 @@ class Store {
   }
 
   getMyGroups() { return this._state.myGroups; }
+  getPreferredBankCode() { return this._state.preferredBankCode; }
+
+  async setPreferredBank(code) {
+    const user = this._state.user;
+    if (!user) throw new Error('Chưa đăng nhập');
+    const { db, fsMod } = await getFirebase();
+    await fsMod.setDoc(
+      fsMod.doc(db, 'users', user.uid),
+      { preferredBankCode: code || null },
+      { merge: true }
+    );
+    this._set({ preferredBankCode: code || null });
+  }
 
   // ---- Auth actions ----
   async signInWithGoogle() {

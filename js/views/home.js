@@ -22,6 +22,7 @@ export function render(mount, storeRef = store) {
   mount.querySelector('[data-qa="qr"]').addEventListener('click', () => openQRDetail());
   mount.querySelector('[data-view-all]').addEventListener('click', () => openHistory());
   mount.querySelector('[data-share-qr]').addEventListener('click', () => openQRDetail());
+  mount.querySelector('[data-quick-transfer]').addEventListener('click', () => runQuickTransfer());
 
   const unsub = storeRef.subscribe((state) => {
     if (state.status !== 'ready' || !state.group) return;
@@ -170,6 +171,52 @@ export function openQRDetail() {
   });
 }
 
+// ⚡ Quick Transfer — 1-tap flow using user's preferred bank.
+// 1. If no preferred bank configured → prompt user to configure in Settings
+// 2. Save QR image to device (so user can scan from Photos in their bank app)
+// 3. Open preferred bank app
+export async function runQuickTransfer() {
+  const state = store.getState();
+  const { group, preferredBankCode } = state;
+  if (!group) return;
+
+  if (!group.bankCode || !group.accountNumber) {
+    toast('Nhóm chưa cấu hình ngân hàng nhận', 'error');
+    return;
+  }
+
+  if (!preferredBankCode) {
+    toast('Vào Cài đặt → Ngân hàng của tôi để chọn bank cho Chuyển Nhanh', 'info');
+    return;
+  }
+
+  const bank = BANK_APPS.find((b) => b.code === preferredBankCode);
+  if (!bank) {
+    toast('Ngân hàng cá nhân không hợp lệ. Vào Cài đặt để chọn lại.', 'error');
+    return;
+  }
+
+  const qrUrl = buildVietQRUrl({
+    bankCode: group.bankCode,
+    accountNumber: group.accountNumber,
+    accountHolder: group.accountHolder,
+    amount: group.monthlyTarget,
+    note: `Dong quy thang ${new Date().getMonth() + 1}`,
+  });
+
+  // Step 1: save QR to device (share sheet on iOS → Save to Photos)
+  toast('Đang lưu QR vào ảnh...', 'info');
+  const filename = `VietQR-${group.bankCode}-${(group.accountNumber || '').slice(-4)}.png`;
+  try { await saveImageAs(qrUrl, filename); }
+  catch (e) { console.warn('[quickTransfer] save QR failed:', e); }
+
+  // Step 2: open preferred bank app after a short delay so the toast shows
+  setTimeout(() => {
+    toast(`Mở ${bank.name} → Quét QR → Chọn từ thư viện`, 'success');
+    openBankApp(bank);
+  }, 400);
+}
+
 // ---- Render helpers ----
 function shell() {
   return `
@@ -252,8 +299,11 @@ function shell() {
                 <p class="text-[9px] text-slate-500 uppercase tracking-wider">Số tài khoản</p>
                 <p class="text-[13px] font-mono font-semibold text-slate-800" data-qr-acct>—</p>
               </div>
-              <button data-share-qr class="w-full text-xs bg-emerald-600 text-white font-semibold py-2 rounded-xl hover:bg-emerald-700 transition flex items-center justify-center gap-1.5">
-                <i class="fa-solid fa-share-nodes text-[10px]"></i> Chia sẻ QR
+              <button data-quick-transfer class="w-full text-xs bg-gradient-to-r from-emerald-500 to-emerald-700 text-white font-bold py-2 rounded-xl hover:from-emerald-600 hover:to-emerald-800 transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/30 mb-1.5">
+                <i class="fa-solid fa-bolt text-[11px]"></i> Chuyển Nhanh
+              </button>
+              <button data-share-qr class="w-full text-[11px] text-slate-500 font-medium hover:text-emerald-600 transition flex items-center justify-center gap-1">
+                <i class="fa-solid fa-qrcode text-[10px]"></i> Xem QR đầy đủ
               </button>
             </div>
           </div>

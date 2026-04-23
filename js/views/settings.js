@@ -5,7 +5,7 @@
 
 import { store } from '../store.js';
 import { fetchBanks } from '../banks.js';
-import { parseAmountInput, formatVND, escapeHtml } from '../utils.js';
+import { parseAmountInput, formatVND, escapeHtml, BANK_APPS } from '../utils.js';
 import { toast } from '../components/toast.js';
 import { confirmDialog } from '../components/modal.js';
 import { openAddGroupForm } from '../components/add-group-form.js';
@@ -25,6 +25,7 @@ export function render(mount, storeRef = store) {
   mount.querySelector('[data-act="leave"]').addEventListener('click', () => leaveGroup());
   mount.querySelector('[data-act="signout"]').addEventListener('click', () => signOut());
   mount.querySelector('[data-act="add-group"]').addEventListener('click', () => openAddGroupForm());
+  mount.querySelector('[data-act="save-pref-bank"]').addEventListener('click', () => savePreferredBank(mount));
 
   return () => unsub();
 }
@@ -48,10 +49,34 @@ function shell() {
         <div data-my-groups class="space-y-2"></div>
       </div>
 
-      <!-- Bank info -->
+      <!-- Personal bank (per user, for Quick Transfer) -->
+      <div class="bg-gradient-to-br from-emerald-50 to-white border border-emerald-100 rounded-3xl p-5 mb-5">
+        <h3 class="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
+          <i class="fa-solid fa-wallet text-emerald-600"></i> Ngân hàng của tôi
+        </h3>
+        <p class="text-[11px] text-slate-500 mb-4">
+          Dùng cho nút <strong>⚡ Chuyển Nhanh</strong> ở Trang chủ — app ngân hàng này sẽ mở khi bạn muốn chuyển tiền vào quỹ.
+        </p>
+        <div class="space-y-3">
+          <div>
+            <label class="fb-label">Chọn ngân hàng bạn hay dùng</label>
+            <select data-field="preferredBankCode" class="fb-input">
+              <option value="">— Chưa chọn (tắt tính năng Chuyển Nhanh) —</option>
+              ${BANK_APPS.map((b) => `<option value="${b.code}">${escapeHtml(b.name)}</option>`).join('')}
+            </select>
+          </div>
+          <button data-act="save-pref-bank" class="fb-btn fb-btn-primary">
+            <i class="fa-regular fa-floppy-disk mr-1"></i> Lưu ngân hàng cá nhân
+          </button>
+        </div>
+      </div>
+
+      <!-- Group bank info (for QR generation) -->
       <div class="bg-white rounded-3xl p-5 neu-soft mb-5">
-        <h3 class="text-sm font-semibold text-slate-800 mb-1">Tài khoản ngân hàng</h3>
-        <p class="text-[11px] text-slate-500 mb-4">Dùng để sinh mã VietQR đóng quỹ</p>
+        <h3 class="text-sm font-semibold text-slate-800 mb-1 flex items-center gap-2">
+          <i class="fa-solid fa-building-columns text-slate-500"></i> Ngân hàng nhận (của nhóm)
+        </h3>
+        <p class="text-[11px] text-slate-500 mb-4">Dùng để sinh mã VietQR đóng quỹ — chủ nhóm cấu hình</p>
 
         <div class="space-y-3">
           <div>
@@ -147,14 +172,40 @@ async function update(mount, state, banksPromise) {
   setField('monthlyTarget', group.monthlyTarget ? new Intl.NumberFormat('vi-VN').format(group.monthlyTarget) : '');
   setField('groupName',     group.name || '');
   setField('inviteCode',    group.inviteCode || '');
+  setField('preferredBankCode', state.preferredBankCode || '');
 
-  // Disable inputs if not owner
+  // Disable group-owned inputs if not owner. Personal fields (preferred
+  // bank) stay editable for every user regardless of role.
+  const personalFields = new Set(['preferredBankCode']);
   mount.querySelectorAll('[data-field]').forEach((el) => {
     if (el.dataset.field === 'inviteCode') return; // always readonly
+    if (personalFields.has(el.dataset.field)) return;
     el.disabled = !isOwner;
   });
   mount.querySelector('[data-act="save"]').disabled = !isOwner;
   mount.querySelector('[data-act="save"]').style.opacity = isOwner ? '1' : '0.5';
+}
+
+async function savePreferredBank(mount) {
+  const select = mount.querySelector('[data-field="preferredBankCode"]');
+  const code = select.value || null;
+
+  const btn = mount.querySelector('[data-act="save-pref-bank"]');
+  btn.disabled = true;
+  const oldHtml = btn.innerHTML;
+  btn.innerHTML = `<i class="fa-solid fa-spinner fa-spin mr-1"></i> Đang lưu...`;
+
+  try {
+    await store.setPreferredBank(code);
+    const bankName = BANK_APPS.find((b) => b.code === code)?.name;
+    toast(code ? `Đã lưu ${bankName}` : 'Đã tắt Chuyển Nhanh', 'success');
+  } catch (err) {
+    console.error(err);
+    toast(err.message || 'Lưu thất bại', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = oldHtml;
+  }
 }
 
 function renderMyGroupsList(mount, myGroups, currentGroup, user) {
