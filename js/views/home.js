@@ -6,6 +6,7 @@ import { store } from '../store.js';
 import {
   formatVND, relativeDate, monthKey, getCategory,
   bgSoft, textStrong, escapeHtml, buildVietQRUrl,
+  BANK_APPS, openBankApp, saveImageAs,
 } from '../utils.js';
 import { openTransactionForm } from '../components/transaction-form.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
@@ -75,33 +76,79 @@ export function openQRDetail() {
     note: `Dong quy thang ${new Date().getMonth() + 1}`,
   });
 
+  const bankGridHtml = BANK_APPS.map((b) => `
+    <button data-bank="${b.code}" class="flex flex-col items-center gap-1 p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 active:scale-95 transition">
+      <div class="w-10 h-10 rounded-xl ${b.color} text-white flex items-center justify-center text-[10px] font-bold shadow">${b.code}</div>
+      <span class="text-[10px] font-medium text-slate-700 truncate max-w-full">${escapeHtml(b.name)}</span>
+    </button>
+  `).join('');
+
   openModal({
-    title: 'Mã VietQR Đóng Quỹ',
+    title: 'Chuyển tiền đóng quỹ',
     bodyHtml: `
       <div class="flex flex-col items-center">
         ${qrUrl
-          ? `<img src="${qrUrl}" alt="VietQR" class="w-64 h-64 rounded-2xl border-2 border-emerald-100" />`
-          : `<div class="w-64 h-64 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 text-center px-4"><p class="text-sm">Chưa có thông tin tài khoản.<br/>Vào <strong>Cài đặt</strong> để cấu hình.</p></div>`}
-        <div class="w-full mt-5 space-y-2 text-sm">
+          ? `<button id="qr-image-btn" class="w-56 h-56 rounded-2xl border-2 border-emerald-100 overflow-hidden active:scale-95 transition" title="Bấm để mở app ngân hàng">
+               <img src="${qrUrl}" alt="VietQR" class="w-full h-full" />
+             </button>
+             <p class="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
+               <i class="fa-solid fa-hand-pointer"></i> Bấm vào QR để chọn app ngân hàng
+             </p>`
+          : `<div class="w-56 h-56 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 text-center px-4"><p class="text-sm">Chưa có thông tin tài khoản.<br/>Vào <strong>Cài đặt</strong> để cấu hình.</p></div>`}
+
+        <div class="w-full mt-4 space-y-1.5 text-sm">
           <div class="flex justify-between"><span class="text-slate-500">Ngân hàng</span><span class="font-semibold text-slate-800">${escapeHtml(group.bankName || '—')}</span></div>
           <div class="flex justify-between"><span class="text-slate-500">Số tài khoản</span><span class="font-mono font-semibold text-slate-800">${escapeHtml(group.accountNumber || '—')}</span></div>
           <div class="flex justify-between"><span class="text-slate-500">Chủ tài khoản</span><span class="font-semibold text-slate-800 text-right">${escapeHtml(group.accountHolder || '—')}</span></div>
           <div class="flex justify-between"><span class="text-slate-500">Gợi ý số tiền</span><span class="font-semibold text-emerald-600">${formatVND(group.monthlyTarget || 0)}</span></div>
         </div>
+
+        ${qrUrl ? `
+          <div class="w-full mt-5">
+            <p class="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
+              <i class="fa-solid fa-bolt text-emerald-600"></i> Chuyển nhanh qua app ngân hàng
+            </p>
+            <div class="grid grid-cols-4 gap-2 mb-2">
+              ${bankGridHtml}
+            </div>
+            <p class="text-[10px] text-slate-400 leading-relaxed">
+              Mẹo: trước tiên bấm <strong>Lưu QR</strong> (lưu vào ảnh), rồi mở app ngân hàng → <strong>Quét QR</strong> → <strong>Chọn từ thư viện</strong> → ảnh QR vừa lưu → thông tin tự điền.
+            </p>
+          </div>
+        ` : ''}
       </div>
     `,
-    footerHtml: `
-      <div class="flex gap-2">
-        <button class="fb-btn fb-btn-ghost flex-1" data-act="copy"><i class="fa-regular fa-copy mr-1"></i> Copy STK</button>
-        <button class="fb-btn fb-btn-primary flex-1" data-act="share"><i class="fa-solid fa-share-nodes mr-1"></i> Chia sẻ</button>
+    footerHtml: qrUrl ? `
+      <div class="grid grid-cols-3 gap-2">
+        <button class="fb-btn fb-btn-ghost" data-act="copy"><i class="fa-regular fa-copy mr-1"></i> Copy STK</button>
+        <button class="fb-btn fb-btn-primary" data-act="save"><i class="fa-solid fa-download mr-1"></i> Lưu QR</button>
+        <button class="fb-btn fb-btn-ghost" data-act="share"><i class="fa-solid fa-share-nodes mr-1"></i> Chia sẻ</button>
       </div>
-    `,
+    ` : '',
     onMount: (sheet) => {
-      sheet.querySelector('[data-act="copy"]').addEventListener('click', async () => {
+      // Tap on the QR image itself scrolls the bank grid into view on small
+      // screens — equivalent to picking a bank.
+      sheet.querySelector('#qr-image-btn')?.addEventListener('click', () => {
+        const grid = sheet.querySelector('.grid.grid-cols-4');
+        if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      });
+
+      sheet.querySelector('[data-act="copy"]')?.addEventListener('click', async () => {
         try { await navigator.clipboard.writeText(group.accountNumber || ''); toast('Đã copy số tài khoản', 'success'); }
         catch { toast('Không thể copy', 'error'); }
       });
-      sheet.querySelector('[data-act="share"]').addEventListener('click', async () => {
+
+      sheet.querySelector('[data-act="save"]')?.addEventListener('click', async () => {
+        if (!qrUrl) return;
+        toast('Đang lưu...', 'info');
+        const filename = `VietQR-${group.bankCode || 'bank'}-${(group.accountNumber || '').slice(-4)}.png`;
+        const result = await saveImageAs(qrUrl, filename);
+        if (result === 'downloaded') toast('Đã tải QR về máy', 'success');
+        else if (result === 'shared') toast('Đã lưu QR', 'success');
+        else toast('QR đã mở — giữ & "Lưu vào Ảnh"', 'info');
+      });
+
+      sheet.querySelector('[data-act="share"]')?.addEventListener('click', async () => {
         const text = `Đóng quỹ gia đình "${group.name}":\n${group.bankName} — ${group.accountNumber}\nChủ TK: ${group.accountHolder}`;
         if (navigator.share) {
           try { await navigator.share({ title: 'Mã đóng quỹ', text, url: qrUrl || undefined }); } catch {}
@@ -109,6 +156,15 @@ export function openQRDetail() {
           try { await navigator.clipboard.writeText(text); toast('Đã copy thông tin', 'success'); }
           catch { toast('Không thể chia sẻ', 'error'); }
         }
+      });
+
+      sheet.querySelectorAll('[data-bank]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const bank = BANK_APPS.find((b) => b.code === btn.dataset.bank);
+          if (!bank) return;
+          toast(`Đang mở ${bank.name}...`, 'info');
+          openBankApp(bank);
+        });
       });
     },
   });

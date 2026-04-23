@@ -111,6 +111,72 @@ export const buildVietQRUrl = ({ bankCode, accountNumber, accountHolder, amount,
   return qs ? `${base}?${qs}` : base;
 };
 
+// Quick-launch URL schemes for popular VN bank apps. The scheme opens the
+// app to its home screen (VN banks don't publish deep-link params for
+// auto-filling transfers). User then goes to QR scan → pick saved QR from
+// Photos to complete the transfer.
+//
+// appStoreId is used as a fallback — if the scheme doesn't open anything
+// within ~1.5s (app not installed), we redirect to the App Store listing.
+export const BANK_APPS = [
+  { code: 'MB',   name: 'MB Bank',      scheme: 'mbbank://',      appStoreId: '1205807363', color: 'bg-red-600'    },
+  { code: 'VCB',  name: 'Vietcombank',  scheme: 'vietcombank://', appStoreId: '561433133',  color: 'bg-green-700'  },
+  { code: 'TCB',  name: 'Techcombank',  scheme: 'tcb://',         appStoreId: '1416476932', color: 'bg-red-500'    },
+  { code: 'TPB',  name: 'TPBank',       scheme: 'tpb://',         appStoreId: '1435763529', color: 'bg-purple-600' },
+  { code: 'BIDV', name: 'BIDV',         scheme: 'bidv://',        appStoreId: '1062097487', color: 'bg-teal-600'   },
+  { code: 'ACB',  name: 'ACB',          scheme: 'acb://',         appStoreId: '1169505385', color: 'bg-blue-600'   },
+  { code: 'VPB',  name: 'VPBank',       scheme: 'vpbank://',      appStoreId: '1488819940', color: 'bg-emerald-600'},
+  { code: 'VTB',  name: 'VietinBank',   scheme: 'vietinbank://',  appStoreId: '1490330670', color: 'bg-blue-800'   },
+];
+
+// Attempt to open a bank app by URL scheme. Falls back to App Store on iOS
+// if the scheme didn't take the user away from the page within ~1.5s.
+export function openBankApp({ scheme, appStoreId }) {
+  const start = Date.now();
+  const win = window;
+  win.location.href = scheme;
+  setTimeout(() => {
+    if (Date.now() - start < 2000 && document.visibilityState === 'visible') {
+      if (appStoreId) win.location.href = `https://apps.apple.com/app/id${appStoreId}`;
+    }
+  }, 1500);
+}
+
+// Download an image URL as a file — uses navigator.share on iOS if possible
+// (lets user save to Photos), otherwise falls back to <a download>.
+export async function saveImageAs(url, filename = 'qr.png') {
+  try {
+    const res = await fetch(url, { mode: 'cors' });
+    if (!res.ok) throw new Error(`fetch failed ${res.status}`);
+    const blob = await res.blob();
+
+    // Prefer native share sheet on mobile (iOS Safari supports files)
+    if (navigator.canShare) {
+      const file = new File([blob], filename, { type: blob.type || 'image/png' });
+      if (navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], title: filename }); return 'shared'; }
+        catch {/* user cancelled — fall through to download */}
+      }
+    }
+
+    // Fallback: trigger <a download>
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    return 'downloaded';
+  } catch (e) {
+    // CORS / network — open in new tab so user can long-press to save
+    window.open(url, '_blank', 'noopener');
+    return 'opened';
+  }
+}
+
 // Common Vietnamese bank codes (subset) — used for <select> in settings
 export const BANKS = [
   { code: 'VCB',          name: 'Vietcombank' },
