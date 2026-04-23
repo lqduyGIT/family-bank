@@ -111,35 +111,47 @@ export const buildVietQRUrl = ({ bankCode, accountNumber, accountHolder, amount,
   return qs ? `${base}?${qs}` : base;
 };
 
-// Quick-launch URL schemes for popular VN bank apps. The scheme opens the
-// app to its home screen (VN banks don't publish deep-link params for
-// auto-filling transfers). User then goes to QR scan → pick saved QR from
-// Photos to complete the transfer.
+// Quick-launch map for VN bank apps. Uses VietQR's official deeplink router
+// (https://dl.vietqr.io/pay?app=<appCode>) — a single HTTPS URL that works
+// on both iOS (Universal Link) and Android (App Link), maintained by VietQR
+// as bank schemes change.
 //
-// appStoreId is used as a fallback — if the scheme doesn't open anything
-// within ~1.5s (app not installed), we redirect to the App Store listing.
+// Docs: https://vietqr.io/danh-sach-api/deeplink-app-ngan-hang/
+// Source: https://api.vietqr.io/v2/ios-app-deeplinks (same URL for Android)
+//
+// Note: VietQR confirms these deeplinks CANNOT auto-fill recipient/amount
+// today — they only launch the bank app. User still needs to "Scan QR from
+// gallery" inside the bank app after the QR image is saved to Photos.
 export const BANK_APPS = [
-  { code: 'MB',   name: 'MB Bank',      scheme: 'mbbank://',      appStoreId: '1205807363', color: 'bg-red-600'    },
-  { code: 'VCB',  name: 'Vietcombank',  scheme: 'vietcombank://', appStoreId: '561433133',  color: 'bg-green-700'  },
-  { code: 'TCB',  name: 'Techcombank',  scheme: 'tcb://',         appStoreId: '1416476932', color: 'bg-red-500'    },
-  { code: 'TPB',  name: 'TPBank',       scheme: 'tpb://',         appStoreId: '1435763529', color: 'bg-purple-600' },
-  { code: 'BIDV', name: 'BIDV',         scheme: 'bidv://',        appStoreId: '1062097487', color: 'bg-teal-600'   },
-  { code: 'ACB',  name: 'ACB',          scheme: 'acb://',         appStoreId: '1169505385', color: 'bg-blue-600'   },
-  { code: 'VPB',  name: 'VPBank',       scheme: 'vpbank://',      appStoreId: '1488819940', color: 'bg-emerald-600'},
-  { code: 'VTB',  name: 'VietinBank',   scheme: 'vietinbank://',  appStoreId: '1490330670', color: 'bg-blue-800'   },
+  { code: 'MB',   appCode: 'mb',       name: 'MB Bank',       color: 'bg-red-600'    },
+  { code: 'VCB',  appCode: 'vcb',      name: 'Vietcombank',   color: 'bg-green-700'  },
+  { code: 'TCB',  appCode: 'tcb',      name: 'Techcombank',   color: 'bg-red-500'    },
+  { code: 'TPB',  appCode: 'tpb',      name: 'TPBank',        color: 'bg-purple-600' },
+  { code: 'BIDV', appCode: 'bidv',     name: 'BIDV',          color: 'bg-teal-600'   },
+  { code: 'ACB',  appCode: 'acb',      name: 'ACB',           color: 'bg-blue-600'   },
+  { code: 'VPB',  appCode: 'vpb',      name: 'VPBank',        color: 'bg-emerald-600'},
+  { code: 'VTB',  appCode: 'icb',      name: 'VietinBank',    color: 'bg-blue-800'   },
+  { code: 'AGR',  appCode: 'vba',      name: 'Agribank',      color: 'bg-red-700'    },
+  { code: 'SHB',  appCode: 'shb',      name: 'SHB',           color: 'bg-blue-700'   },
+  { code: 'HDB',  appCode: 'hdb',      name: 'HDBank',        color: 'bg-yellow-600' },
+  { code: 'OCB',  appCode: 'ocb',      name: 'OCB',           color: 'bg-green-600'  },
+  { code: 'VIB',  appCode: 'vib',      name: 'VIB',           color: 'bg-sky-600'    },
+  { code: 'EIB',  appCode: 'eib',      name: 'Eximbank',      color: 'bg-blue-900'   },
+  { code: 'SEAB', appCode: 'seab',     name: 'SeABank',       color: 'bg-orange-600' },
+  { code: 'TIMO', appCode: 'timo',     name: 'Timo',          color: 'bg-pink-500'   },
+  { code: 'CAKE', appCode: 'cake',     name: 'Cake (VPBank)', color: 'bg-pink-600'   },
 ];
 
-// Attempt to open a bank app by URL scheme. Falls back to App Store on iOS
-// if the scheme didn't take the user away from the page within ~1.5s.
-export function openBankApp({ scheme, appStoreId }) {
-  const start = Date.now();
-  const win = window;
-  win.location.href = scheme;
-  setTimeout(() => {
-    if (Date.now() - start < 2000 && document.visibilityState === 'visible') {
-      if (appStoreId) win.location.href = `https://apps.apple.com/app/id${appStoreId}`;
-    }
-  }, 1500);
+export function getBankDeepLink({ appCode }) {
+  return `https://dl.vietqr.io/pay?app=${encodeURIComponent(appCode)}`;
+}
+
+// Cross-platform bank-app launcher. The URL is a VietQR-maintained Universal
+// Link (iOS) / App Link (Android) — no custom scheme or App Store fallback
+// needed; VietQR handles install detection + install-prompt themselves.
+export function openBankApp({ appCode }) {
+  if (!appCode) return;
+  window.location.href = getBankDeepLink({ appCode });
 }
 
 // Download an image URL as a file — uses navigator.share on iOS if possible
