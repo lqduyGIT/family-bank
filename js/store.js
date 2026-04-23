@@ -9,9 +9,10 @@ import { onAuthChange, signInWithGoogle as authSignIn, signOut as authSignOut } 
 const EMPTY_STATE = () => ({
   status: 'loading',  // 'loading' | 'anonymous' | 'no-group' | 'ready'
   user: null,         // { uid, displayName, photoURL, email }
-  group: null,        // { id, name, ownerUid, bankCode, bankName, accountNumber, accountHolder, monthlyTarget, inviteCode, createdAt }
+  group: null,        // current selected group — { id, name, ownerUid, bankCode, bankName, accountNumber, accountHolder, monthlyTarget, inviteCode, createdAt }
   members: [],        // [{ uid, displayName, photoURL, role, joinedAt }]
   transactions: [],   // [{ id, type, amount, note, category, memberUid, memberName, date }]
+  myGroups: [],       // lightweight list of all groups user belongs to — [{ id, name, ownerUid, bankName, inviteCode }]
   error: null,
 });
 
@@ -43,13 +44,25 @@ class Store {
       const userRef = fsMod.doc(db, 'users', user.uid);
       const snap = await fsMod.getDoc(userRef);
       const existing = snap.exists() ? snap.data() : {};
+
+      // Backfill: older user docs had only currentGroupId. Ensure that is
+      // also in groupIds so the multi-group UI sees it.
+      let groupIds = Array.isArray(existing.groupIds) ? [...existing.groupIds] : [];
+      if (existing.currentGroupId && !groupIds.includes(existing.currentGroupId)) {
+        groupIds.push(existing.currentGroupId);
+      }
+
       const merged = {
         displayName: user.displayName || existing.displayName || 'Ẩn danh',
         photoURL: user.photoURL || existing.photoURL || '',
         email: user.email || existing.email || '',
         currentGroupId: existing.currentGroupId || null,
+        groupIds,
       };
       await fsMod.setDoc(userRef, merged, { merge: true });
+
+      // Load user's groups list (best effort — skip broken refs)
+      await this._refreshMyGroups(groupIds);
 
       if (merged.currentGroupId) {
         await this._attachGroup(merged.currentGroupId);
@@ -90,6 +103,8 @@ class Store {
   getMemberByUid(uid) {
     return this._state.members.find((m) => m.uid === uid) || null;
   }
+
+  getMyGroups() { return this._state.myGroups; }
 
   // ---- Auth actions ----
   async signInWithGoogle() {
@@ -155,9 +170,13 @@ class Store {
       createdBy: user.uid,
       createdAt: new Date().toISOString(),
     });
-    batch.set(fsMod.doc(db, 'users', user.uid), { currentGroupId: groupId }, { merge: true });
+    batch.set(fsMod.doc(db, 'users', user.uid), {
+      currentGroupId: groupId,
+      groupIds: fsMod.arrayUnion(groupId),
+    }, { merge: true });
     await batch.commit();
 
+    await this._refreshMyGroupsFromUserDoc();
     await this._attachGroup(groupId);
     return groupId;
   }
@@ -180,10 +199,29 @@ class Store {
       role: 'member',
       joinedAt: new Date().toISOString(),
     });
-    await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), { currentGroupId: groupId }, { merge: true });
+    await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), {
+      currentGroupId: groupId,
+      groupIds: fsMod.arrayUnion(groupId),
+    }, { merge: true });
 
+    await this._refreshMyGroupsFromUserDoc();
     await this._attachGroup(groupId);
     return groupId;
+  }
+
+  async switchGroup(groupId) {
+    const user = this._state.user;
+    if (!user) throw new Error('Chưa đăng nhập');
+    if (!this._state.myGroups.some((g) => g.id === groupId)) {
+      throw new Error('Bạn không phải thành viên của nhóm này');
+    }
+    if (this._state.group?.id === groupId) return; // already there
+
+    const { db, fsMod } = await getFirebase();
+    await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), { currentGroupId: groupId }, { merge: true });
+
+    this._set({ status: 'loading', group: null, members: [], transactions: [] });
+    await this._attachGroup(groupId);
   }
 
   async leaveGroup() {
@@ -200,12 +238,21 @@ class Store {
     const userRef = fsMod.doc(db, 'users', user.uid);
     const memberRef = fsMod.doc(db, 'groups', group.id, 'members', user.uid);
 
+    // Determine the next currentGroupId: fall back to another group the user
+    // is in (other than the one being left) so they don't get dumped to the
+    // group-gate when other groups still exist.
+    const remaining = this._state.myGroups.filter((g) => g.id !== group.id);
+    const nextCurrentGroupId = remaining[0]?.id || null;
+
+    const userUpdate = {
+      currentGroupId: nextCurrentGroupId,
+      groupIds: fsMod.arrayRemove(group.id),
+    };
+
     if (isOwner && others.length === 0) {
       // Last member leaving owned group → delete group doc.
-      // Note: transactions subcollection + invite code may become orphan
-      //   (Firestore client can't recursively delete subcollections).
       batch.delete(fsMod.doc(db, 'groups', group.id));
-      batch.set(userRef, { currentGroupId: null }, { merge: true });
+      batch.set(userRef, userUpdate, { merge: true });
     } else if (isOwner && others.length > 0) {
       // Transfer ownership to the oldest remaining member, then leave.
       const nextOwner = [...others].sort(
@@ -213,11 +260,11 @@ class Store {
       )[0];
       batch.update(fsMod.doc(db, 'groups', group.id), { ownerUid: nextOwner.uid });
       batch.delete(memberRef);
-      batch.set(userRef, { currentGroupId: null }, { merge: true });
+      batch.set(userRef, userUpdate, { merge: true });
     } else {
       // Plain member leaving
       batch.delete(memberRef);
-      batch.set(userRef, { currentGroupId: null }, { merge: true });
+      batch.set(userRef, userUpdate, { merge: true });
     }
 
     await batch.commit();
@@ -234,7 +281,16 @@ class Store {
     }
 
     this._teardownGroup();
-    this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+    await this._refreshMyGroupsFromUserDoc();
+
+    const nextGroupId = this._state.user && remaining[0]?.id;
+    if (nextGroupId) {
+      // Switch into another existing group instead of bouncing to group-gate
+      this._set({ status: 'loading', group: null, members: [], transactions: [] });
+      await this._attachGroup(nextGroupId);
+    } else {
+      this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+    }
   }
 
   async updateGroupProfile(patch) {
@@ -321,6 +377,40 @@ class Store {
     if (this._unsubGroup)        { this._unsubGroup();        this._unsubGroup = null; }
     if (this._unsubMembers)      { this._unsubMembers();      this._unsubMembers = null; }
     if (this._unsubTransactions) { this._unsubTransactions(); this._unsubTransactions = null; }
+  }
+
+  // ---- Internal: refresh myGroups list ----
+  async _refreshMyGroups(groupIds) {
+    if (!Array.isArray(groupIds) || groupIds.length === 0) {
+      this._set({ myGroups: [] });
+      return;
+    }
+    const { db, fsMod } = await getFirebase();
+    const snaps = await Promise.all(
+      groupIds.map(async (gid) => {
+        try { return await fsMod.getDoc(fsMod.doc(db, 'groups', gid)); }
+        catch { return null; }
+      })
+    );
+    const myGroups = snaps
+      .filter((s) => s && s.exists())
+      .map((s) => ({
+        id: s.id,
+        name: s.data().name,
+        ownerUid: s.data().ownerUid,
+        bankName: s.data().bankName,
+        inviteCode: s.data().inviteCode,
+      }));
+    this._set({ myGroups });
+  }
+
+  async _refreshMyGroupsFromUserDoc() {
+    const user = this._state.user;
+    if (!user) return;
+    const { db, fsMod } = await getFirebase();
+    const userSnap = await fsMod.getDoc(fsMod.doc(db, 'users', user.uid));
+    const groupIds = userSnap.exists() ? (userSnap.data().groupIds || []) : [];
+    await this._refreshMyGroups(groupIds);
   }
 }
 

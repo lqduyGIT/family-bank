@@ -8,6 +8,7 @@ import { fetchBanks } from '../banks.js';
 import { parseAmountInput, formatVND, escapeHtml } from '../utils.js';
 import { toast } from '../components/toast.js';
 import { confirmDialog } from '../components/modal.js';
+import { openAddGroupForm } from '../components/add-group-form.js';
 
 export function render(mount, storeRef = store) {
   mount.innerHTML = shell();
@@ -23,6 +24,7 @@ export function render(mount, storeRef = store) {
   mount.querySelector('[data-act="save"]').addEventListener('click', () => saveProfile(mount));
   mount.querySelector('[data-act="leave"]').addEventListener('click', () => leaveGroup());
   mount.querySelector('[data-act="signout"]').addEventListener('click', () => signOut());
+  mount.querySelector('[data-act="add-group"]').addEventListener('click', () => openAddGroupForm());
 
   return () => unsub();
 }
@@ -32,6 +34,19 @@ function shell() {
     <section class="px-5">
       <h2 class="text-xl font-bold text-slate-800 mb-1">Cài đặt</h2>
       <p class="text-sm text-slate-500 mb-5" data-role>—</p>
+
+      <!-- My groups -->
+      <div class="bg-white rounded-3xl p-5 neu-soft mb-5">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-layer-group text-violet-600"></i> Nhóm của tôi
+          </h3>
+          <button data-act="add-group" class="text-xs text-emerald-600 font-semibold flex items-center gap-1 hover:text-emerald-700">
+            <i class="fa-solid fa-plus"></i> Thêm nhóm
+          </button>
+        </div>
+        <div data-my-groups class="space-y-2"></div>
+      </div>
 
       <!-- Bank info -->
       <div class="bg-white rounded-3xl p-5 neu-soft mb-5">
@@ -99,10 +114,12 @@ function shell() {
 }
 
 async function update(mount, state, banksPromise) {
-  const { group } = state;
+  const { group, user, myGroups } = state;
   const roleEl = mount.querySelector('[data-role]');
   const isOwner = store.isOwner();
   roleEl.textContent = isOwner ? '👑 Bạn là chủ nhóm — có quyền chỉnh sửa' : '🙋 Bạn là thành viên — chỉ chủ nhóm mới sửa được';
+
+  renderMyGroupsList(mount, myGroups, group, user);
 
   // Populate bank select
   const bankSelect = mount.querySelector('[data-field="bankCode"]');
@@ -138,6 +155,60 @@ async function update(mount, state, banksPromise) {
   });
   mount.querySelector('[data-act="save"]').disabled = !isOwner;
   mount.querySelector('[data-act="save"]').style.opacity = isOwner ? '1' : '0.5';
+}
+
+function renderMyGroupsList(mount, myGroups, currentGroup, user) {
+  const container = mount.querySelector('[data-my-groups]');
+  if (!container) return;
+
+  if (!myGroups || myGroups.length === 0) {
+    container.innerHTML = `<p class="text-xs text-slate-400 italic">Bạn chưa tham gia nhóm nào khác.</p>`;
+    return;
+  }
+
+  container.innerHTML = myGroups.map((g) => {
+    const isCurrent = currentGroup && g.id === currentGroup.id;
+    const isOwnerOfG = user && g.ownerUid === user.uid;
+    return `
+      <button
+        data-switch-group="${g.id}"
+        class="w-full flex items-center gap-3 p-3 rounded-2xl text-left transition
+               ${isCurrent ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-slate-50 hover:bg-emerald-50 border-2 border-transparent'}"
+        ${isCurrent ? 'disabled style="cursor:default"' : ''}
+      >
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-white shrink-0">
+          <i class="fa-solid fa-house text-xs"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-semibold text-slate-800 truncate flex items-center gap-1.5">
+            ${escapeHtml(g.name || '—')}
+            ${isOwnerOfG ? '<span class="text-[9px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">👑</span>' : ''}
+            ${isCurrent ? '<span class="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded">Đang ở đây</span>' : ''}
+          </p>
+          <p class="text-[10px] text-slate-500 truncate">${g.bankName ? escapeHtml(g.bankName) : 'Chưa cấu hình ngân hàng'}</p>
+        </div>
+        ${!isCurrent ? '<i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i>' : ''}
+      </button>
+    `;
+  }).join('');
+
+  // Bind switch handlers (only to non-current, non-disabled buttons)
+  container.querySelectorAll('[data-switch-group]').forEach((btn) => {
+    if (btn.disabled) return;
+    btn.addEventListener('click', async () => {
+      btn.style.opacity = '0.5';
+      btn.style.pointerEvents = 'none';
+      try {
+        await store.switchGroup(btn.dataset.switchGroup);
+        toast('Đã chuyển nhóm', 'success');
+      } catch (err) {
+        console.error(err);
+        toast(err.message || 'Không chuyển được nhóm', 'error');
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = '';
+      }
+    });
+  });
 }
 
 async function saveProfile(mount) {
