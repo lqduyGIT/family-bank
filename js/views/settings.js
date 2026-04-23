@@ -152,7 +152,7 @@ async function update(mount, state, banksPromise) {
     const banks = await banksPromise;
     if (banks.length > 0) {
       bankSelect.innerHTML = `<option value="">— Chọn ngân hàng —</option>` +
-        banks.map((b) => `<option value="${b.code}" data-name="${escapeHtml(b.shortName)}">${escapeHtml(b.shortName)} — ${escapeHtml(b.name)}</option>`).join('');
+        banks.map((b) => `<option value="${b.code}" data-name="${escapeHtml(b.shortName)}" data-bin="${escapeHtml(b.bin || '')}">${escapeHtml(b.shortName)} — ${escapeHtml(b.name)}</option>`).join('');
     } else {
       bankSelect.innerHTML = `<option value="">Không tải được (kiểm tra mạng)</option>`;
     }
@@ -264,8 +264,10 @@ function renderMyGroupsList(mount, myGroups, currentGroup, user) {
 
 async function saveProfile(mount) {
   const bankSelect = mount.querySelector('[data-field="bankCode"]');
+  const selectedOpt = bankSelect.options[bankSelect.selectedIndex];
   const bankCode = bankSelect.value;
-  const bankName = bankSelect.options[bankSelect.selectedIndex]?.dataset.name || '';
+  const bankName = selectedOpt?.dataset.name || '';
+  const bankBin  = selectedOpt?.dataset.bin  || '';  // BIN needed for local EMV QR render
   const accountNumber = mount.querySelector('[data-field="accountNumber"]').value.trim();
   const accountHolder = mount.querySelector('[data-field="accountHolder"]').value.trim().toUpperCase();
   const monthlyTarget = parseAmountInput(mount.querySelector('[data-field="monthlyTarget"]').value);
@@ -279,7 +281,7 @@ async function saveProfile(mount) {
 
   try {
     await store.updateGroupProfile({
-      bankCode, bankName, accountNumber, accountHolder, monthlyTarget, name,
+      bankCode, bankName, bankBin, accountNumber, accountHolder, monthlyTarget, name,
     });
     toast(`Đã lưu · mục tiêu ${formatVND(monthlyTarget)}`, 'success');
   } catch (err) {

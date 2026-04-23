@@ -6,8 +6,10 @@ import { store } from '../store.js';
 import {
   formatVND, relativeDate, monthKey, getCategory,
   bgSoft, textStrong, escapeHtml, buildVietQRUrl,
+  buildVietQrEmv, renderQrDataUrl,
   BANK_APPS, openBankApp, saveImageAs,
 } from '../utils.js';
+import { findBank } from '../banks.js';
 import { openTransactionForm } from '../components/transaction-form.js';
 import { openModal, closeModal, confirmDialog } from '../components/modal.js';
 import { toast } from '../components/toast.js';
@@ -41,23 +43,19 @@ export function render(mount, storeRef = store) {
     mount.querySelector('[data-qr-bank]').textContent = state.group.bankName || 'Chưa cấu hình';
     mount.querySelector('[data-qr-acct]').textContent = formatAccount(state.group.accountNumber, { spaced: true });
 
-    const qrUrl = buildVietQRUrl({
-      bankCode: state.group.bankCode,
-      accountNumber: state.group.accountNumber,
-      accountHolder: state.group.accountHolder,
-      amount: state.group.monthlyTarget,
-      note: `Dong quy thang ${new Date().getMonth() + 1}`,
-    });
     const qrImg = mount.querySelector('[data-qr-img]');
     const qrPlaceholder = mount.querySelector('[data-qr-placeholder]');
-    if (qrUrl) {
-      qrImg.src = qrUrl;
-      qrImg.classList.remove('hidden');
-      qrPlaceholder.classList.add('hidden');
-    } else {
-      qrImg.classList.add('hidden');
-      qrPlaceholder.classList.remove('hidden');
-    }
+    // Render QR locally (preferred) with vietqr.io image URL as fallback
+    resolveQrImageSrc(state.group).then((src) => {
+      if (src) {
+        qrImg.src = src;
+        qrImg.classList.remove('hidden');
+        qrPlaceholder.classList.add('hidden');
+      } else {
+        qrImg.classList.add('hidden');
+        qrPlaceholder.classList.remove('hidden');
+      }
+    });
 
     renderTransactions(mount.querySelector('[data-tx-list]'), state.transactions.slice(0, 10));
   });
@@ -65,17 +63,13 @@ export function render(mount, storeRef = store) {
   return () => unsub();
 }
 
-export function openQRDetail() {
+export async function openQRDetail() {
   const { group } = store.getState();
   if (!group) return;
 
-  const qrUrl = buildVietQRUrl({
-    bankCode: group.bankCode,
-    accountNumber: group.accountNumber,
-    accountHolder: group.accountHolder,
-    amount: group.monthlyTarget,
-    note: `Dong quy thang ${new Date().getMonth() + 1}`,
-  });
+  // Prefer locally-rendered QR (no network dependency on img.vietqr.io).
+  // Falls back to the hosted PNG URL if the local renderer can't run.
+  const qrUrl = (await resolveQrImageSrc(group)) || '';
 
   const bankGridHtml = BANK_APPS.map((b) => `
     <button data-bank="${b.code}" class="flex flex-col items-center gap-1 p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 active:scale-95 transition">
@@ -196,25 +190,32 @@ export async function runQuickTransfer() {
     return;
   }
 
-  const qrUrl = buildVietQRUrl({
-    bankCode: group.bankCode,
-    accountNumber: group.accountNumber,
-    accountHolder: group.accountHolder,
-    amount: group.monthlyTarget,
-    note: `Dong quy thang ${new Date().getMonth() + 1}`,
-  });
+  // Resolve the receiver bank BIN — needed both for local QR rendering and
+  // for the deep-link payment-context URL.
+  const bankBin = group.bankBin || await resolveBankBin(group.bankCode);
+  const addInfo = `Dong quy thang ${new Date().getMonth() + 1}`;
+  const emv = bankBin
+    ? buildVietQrEmv({
+        bankBin,
+        accountNumber: group.accountNumber,
+        amount: group.monthlyTarget || 0,
+        addInfo,
+      })
+    : '';
 
-  // Step 1: surface the QR as a sharable image. On iOS/Android this shows
-  // the native share sheet with a "Save Image" / "Save to gallery" option
-  // → the QR lands directly in Photos / Gallery (not Downloads).
+  // Step 1: save the QR to the user's photo library so they can scan it
+  // from inside the bank app as a last-resort fallback (in case the
+  // deep-link context params aren't honoured by the bank).
+  const qrSrc = (await resolveQrImageSrc(group)) || '';
   const filename = `VietQR-${group.bankCode}-${(group.accountNumber || '').slice(-4)}.png`;
-  const saveResult = await saveImageAs(qrUrl, filename).catch((e) => {
-    console.warn('[quickTransfer] save QR failed:', e);
-    return 'failed';
-  });
+  const saveResult = qrSrc
+    ? await saveImageAs(qrSrc, filename).catch((e) => {
+        console.warn('[quickTransfer] save QR failed:', e);
+        return 'failed';
+      })
+    : 'failed';
 
   if (saveResult === 'cancelled') {
-    // User dismissed share sheet → don't open bank app (likely changed mind)
     toast('Đã huỷ lưu QR', 'info');
     return;
   }
@@ -224,10 +225,20 @@ export async function runQuickTransfer() {
     return;
   }
 
-  // Step 2: open preferred bank app — user now has QR in their Photos
+  // Step 2: open the preferred bank app, passing payment context via the
+  // VietQR deep-link router. Banks that honour the params will jump
+  // straight to the transfer-confirm screen; banks that ignore them will
+  // open to their home screen and the user can scan the just-saved QR.
   setTimeout(() => {
-    toast(`Mở ${bank.name} → Quét QR → Từ thư viện`, 'success');
-    openBankApp(bank);
+    toast(`Mở ${bank.name}...`, 'success');
+    openBankApp(bank, {
+      emv,
+      bankBin,
+      accountNumber: group.accountNumber,
+      accountName: group.accountHolder,
+      amount: group.monthlyTarget || 0,
+      addInfo,
+    });
   }, 400);
 }
 
@@ -504,6 +515,54 @@ function openHistory() {
 }
 
 // ---- helpers ----
+// Resolve an <img src> for the group's VietQR. Prefers a local render from
+// the EMV string (no network / CORS issues) and falls back to vietqr.io's
+// hosted PNG when the local renderer is unavailable or fails.
+async function resolveQrImageSrc(group) {
+  if (!group || !group.accountNumber) return '';
+
+  // Try local render first — requires bank BIN.
+  try {
+    const bin = group.bankBin || await resolveBankBin(group.bankCode);
+    if (bin && window.QRCode) {
+      const emv = buildVietQrEmv({
+        bankBin: bin,
+        accountNumber: group.accountNumber,
+        amount: group.monthlyTarget || 0,
+        addInfo: `Dong quy thang ${new Date().getMonth() + 1}`,
+      });
+      if (emv) {
+        return await renderQrDataUrl(emv, { width: 480, margin: 1 });
+      }
+    }
+  } catch (e) {
+    console.warn('[home] local QR render failed, falling back to vietqr.io:', e);
+  }
+
+  // Fallback to VietQR's hosted PNG
+  return buildVietQRUrl({
+    bankCode: group.bankCode,
+    accountNumber: group.accountNumber,
+    accountHolder: group.accountHolder,
+    amount: group.monthlyTarget,
+    note: `Dong quy thang ${new Date().getMonth() + 1}`,
+  });
+}
+
+const _binCache = new Map();
+async function resolveBankBin(bankCode) {
+  if (!bankCode) return null;
+  if (_binCache.has(bankCode)) return _binCache.get(bankCode);
+  try {
+    const bank = await findBank(bankCode);
+    const bin = bank?.bin || null;
+    _binCache.set(bankCode, bin);
+    return bin;
+  } catch {
+    return null;
+  }
+}
+
 function formatAccount(acct, { spaced = false } = {}) {
   if (!acct) return '—';
   if (acct.length < 6) return acct;
