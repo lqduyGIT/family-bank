@@ -4,7 +4,14 @@ node_modules/
 .vscode/
 .idea/
 *.log
+.claude/
 
 # Firebase runtime config (loaded at runtime from ./.env)
 .env
 .env.local
+
+# Auto-generated PNG icons (built by GitHub Actions during deploy)
+assets/apple-touch-icon.png
+assets/icon-192.png
+assets/icon-512.png
+assets/favicon-32.png
