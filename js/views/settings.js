@@ -93,7 +93,7 @@ function shell() {
         </button>
       </div>
 
-      <p class="text-center text-[10px] text-slate-400 pb-4">Family Bank · v1.0 · Made with ❤️</p>
+      <p class="text-center text-[10px] text-slate-400 pb-4">Family Bank · v1.0 · Made with Wudi_lng2609❤️</p>
     </section>
   `;
 }
