@@ -20,24 +20,49 @@ html, body {
   padding: 0;
 }
 
-/* ---- Phone frame ---- */
+/* ---- Phone frame — responsive across all viewports ---- */
 .phone-frame {
-  max-width: 400px;
+  /* Default (mobile first): full-width up to 420px */
+  max-width: 420px;
   margin: 0 auto;
   min-height: 100vh;
+  min-height: 100dvh; /* dynamic viewport on mobile browsers */
   background: var(--surface);
   position: relative;
   box-shadow: 0 0 60px rgba(15, 23, 42, 0.08);
 }
 
+/* Tablet & small desktop (≥640px): show as a centred phone-style frame */
 @media (min-width: 640px) {
   .phone-frame {
     min-height: calc(100vh - 40px);
+    min-height: calc(100dvh - 40px);
     margin-top: 20px;
     margin-bottom: 20px;
     border-radius: 36px;
     overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.2);
+  }
+}
+
+/* Large desktop (≥1024px): slightly roomier frame + enriched background */
+@media (min-width: 1024px) {
+  body {
+    background:
+      radial-gradient(circle at 20% 20%, rgba(16, 185, 129, 0.08) 0%, transparent 40%),
+      radial-gradient(circle at 80% 80%, rgba(5, 150, 105, 0.06) 0%, transparent 40%),
+      linear-gradient(135deg, #e2e8f0 0%, #f1f5f9 50%, #e2e8f0 100%);
+  }
+  .phone-frame {
+    max-width: 440px;
+    box-shadow: 0 20px 60px -10px rgba(15, 23, 42, 0.15), 0 0 0 1px rgba(148, 163, 184, 0.15);
+  }
+}
+
+/* Bottom nav also scales with frame width — keeps it anchored to phone frame */
+@media (min-width: 1024px) {
+  #bottom-nav {
+    max-width: 440px !important;
   }
 }
 
@@ -158,12 +183,13 @@ html, body {
 
 .modal-sheet {
   width: 100%;
-  max-width: 400px;
+  max-width: 420px;
   background: #fff;
   border-radius: 28px 28px 0 0;
   padding: 24px 20px calc(24px + env(safe-area-inset-bottom));
   animation: slide-up .22s cubic-bezier(.2,.9,.3,1);
   max-height: 90vh;
+  max-height: 90dvh;
   overflow-y: auto;
 }
 

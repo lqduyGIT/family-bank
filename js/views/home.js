@@ -7,7 +7,7 @@ import {
   formatVND, relativeDate, monthKey, getCategory,
   bgSoft, textStrong, escapeHtml, buildVietQRUrl,
   buildVietQrEmv, renderQrDataUrl,
-  BANK_APPS, openBankApp, saveImageAs,
+  saveImageAs,
 } from '../utils.js';
 import { findBank } from '../banks.js';
 import { openTransactionForm } from '../components/transaction-form.js';
@@ -71,25 +71,13 @@ export async function openQRDetail() {
   // Falls back to the hosted PNG URL if the local renderer can't run.
   const qrUrl = (await resolveQrImageSrc(group)) || '';
 
-  const bankGridHtml = BANK_APPS.map((b) => `
-    <button data-bank="${b.code}" class="flex flex-col items-center gap-1 p-2 rounded-xl bg-slate-50 hover:bg-emerald-50 active:scale-95 transition">
-      <div class="w-10 h-10 rounded-xl ${b.color} text-white flex items-center justify-center text-[10px] font-bold shadow">${b.code}</div>
-      <span class="text-[10px] font-medium text-slate-700 truncate max-w-full">${escapeHtml(b.name)}</span>
-    </button>
-  `).join('');
-
   openModal({
-    title: 'Chuyển tiền đóng quỹ',
+    title: 'Mã VietQR đóng quỹ',
     bodyHtml: `
       <div class="flex flex-col items-center">
         ${qrUrl
-          ? `<button id="qr-image-btn" class="w-56 h-56 rounded-2xl border-2 border-emerald-100 overflow-hidden active:scale-95 transition" title="Bấm để mở app ngân hàng">
-               <img src="${qrUrl}" alt="VietQR" class="w-full h-full" />
-             </button>
-             <p class="text-[10px] text-slate-400 mt-2 flex items-center gap-1">
-               <i class="fa-solid fa-hand-pointer"></i> Bấm vào QR để chọn app ngân hàng
-             </p>`
-          : `<div class="w-56 h-56 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 text-center px-4"><p class="text-sm">Chưa có thông tin tài khoản.<br/>Vào <strong>Cài đặt</strong> để cấu hình.</p></div>`}
+          ? `<img src="${qrUrl}" alt="VietQR" class="w-60 h-60 rounded-2xl border-2 border-emerald-100" />`
+          : `<div class="w-60 h-60 rounded-2xl bg-slate-50 flex items-center justify-center text-slate-400 text-center px-4"><p class="text-sm">Chưa có thông tin tài khoản.<br/>Vào <strong>Cài đặt</strong> để cấu hình.</p></div>`}
 
         <div class="w-full mt-4 space-y-1.5 text-sm">
           <div class="flex justify-between"><span class="text-slate-500">Ngân hàng</span><span class="font-semibold text-slate-800">${escapeHtml(group.bankName || '—')}</span></div>
@@ -99,17 +87,9 @@ export async function openQRDetail() {
         </div>
 
         ${qrUrl ? `
-          <div class="w-full mt-5">
-            <p class="text-xs font-semibold text-slate-700 mb-2 flex items-center gap-1.5">
-              <i class="fa-solid fa-bolt text-emerald-600"></i> Chuyển nhanh qua app ngân hàng
-            </p>
-            <div class="grid grid-cols-4 gap-2 mb-2">
-              ${bankGridHtml}
-            </div>
-            <p class="text-[10px] text-slate-400 leading-relaxed">
-              Mẹo: trước tiên bấm <strong>Lưu QR</strong> (lưu vào ảnh), rồi mở app ngân hàng → <strong>Quét QR</strong> → <strong>Chọn từ thư viện</strong> → ảnh QR vừa lưu → thông tin tự điền.
-            </p>
-          </div>
+          <p class="text-[11px] text-slate-500 mt-4 leading-relaxed text-center">
+            Bấm <strong>Lưu QR</strong> → mở app ngân hàng → <strong>Quét QR</strong> → <strong>Chọn từ thư viện</strong> → thông tin tự điền.
+          </p>
         ` : ''}
       </div>
     `,
@@ -121,13 +101,6 @@ export async function openQRDetail() {
       </div>
     ` : '',
     onMount: (sheet) => {
-      // Tap on the QR image itself scrolls the bank grid into view on small
-      // screens — equivalent to picking a bank.
-      sheet.querySelector('#qr-image-btn')?.addEventListener('click', () => {
-        const grid = sheet.querySelector('.grid.grid-cols-4');
-        if (grid) grid.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      });
-
       sheet.querySelector('[data-act="copy"]')?.addEventListener('click', async () => {
         try { await navigator.clipboard.writeText(group.accountNumber || ''); toast('Đã copy số tài khoản', 'success'); }
         catch { toast('Không thể copy', 'error'); }
@@ -152,23 +125,20 @@ export async function openQRDetail() {
           catch { toast('Không thể chia sẻ', 'error'); }
         }
       });
-
-      sheet.querySelectorAll('[data-bank]').forEach((btn) => {
-        btn.addEventListener('click', () => {
-          const bank = BANK_APPS.find((b) => b.code === btn.dataset.bank);
-          if (!bank) return;
-          toast(`Đang mở ${bank.name}...`, 'info');
-          openBankApp(bank);
-        });
-      });
     },
   });
 }
 
-// ⚡ Quick Transfer — direct jump to user's preferred bank app.
-// No redirect page, no share sheet, no QR save. Just: validate → launch.
-export function runQuickTransfer() {
-  const { group, preferredBankCode } = store.getState();
+// 💾 Save QR — surfaces the native share sheet so the user can save the
+// VietQR image straight to Photos / Gallery. They then open their bank
+// app manually → QR scanner → "Chọn từ thư viện" → transfer auto-fills.
+//
+// Why save-then-scan instead of direct deep link? iOS Safari flags custom
+// schemes like `tcb://` as unsafe in some versions and shows a warning
+// dialog, breaking the UX. The save-to-Photos path works everywhere
+// (iOS 15+, Android Chrome, even older browsers via download fallback).
+export async function runQuickTransfer() {
+  const { group } = store.getState();
   if (!group) return;
 
   if (!group.bankCode || !group.accountNumber) {
@@ -176,19 +146,34 @@ export function runQuickTransfer() {
     return;
   }
 
-  if (!preferredBankCode) {
-    toast('Vào Cài đặt → Ngân hàng của tôi để chọn bank cho Chuyển Nhanh', 'info');
+  const qrSrc = await resolveQrImageSrc(group);
+  if (!qrSrc) {
+    toast('Không tạo được QR — kiểm tra thông tin ngân hàng trong Cài đặt', 'error');
     return;
   }
 
-  const bank = BANK_APPS.find((b) => b.code === preferredBankCode);
-  if (!bank) {
-    toast('Ngân hàng cá nhân không hợp lệ. Vào Cài đặt để chọn lại.', 'error');
-    return;
-  }
+  const filename = `VietQR-${group.bankCode}-${(group.accountNumber || '').slice(-4)}.png`;
+  const result = await saveImageAs(qrSrc, filename).catch((e) => {
+    console.warn('[saveQR] failed:', e);
+    return 'failed';
+  });
 
-  toast(`Mở ${bank.name}...`, 'info');
-  openBankApp(bank);
+  switch (result) {
+    case 'shared':
+      toast('Đã lưu QR. Mở app ngân hàng → Quét QR → Từ thư viện', 'success');
+      break;
+    case 'downloaded':
+      toast('QR đã tải về. Mở app ngân hàng → Quét QR → Từ thư viện', 'success');
+      break;
+    case 'cancelled':
+      toast('Đã huỷ', 'info');
+      break;
+    case 'opened':
+      toast('Giữ ảnh & chọn "Lưu vào Ảnh" trên tab mới', 'info');
+      break;
+    default:
+      toast('Không lưu được QR', 'error');
+  }
 }
 
 // ---- Render helpers ----
@@ -274,7 +259,7 @@ function shell() {
                 <p class="text-[13px] font-mono font-semibold text-slate-800" data-qr-acct>—</p>
               </div>
               <button data-quick-transfer class="w-full text-xs bg-gradient-to-r from-emerald-500 to-emerald-700 text-white font-bold py-2.5 rounded-xl hover:from-emerald-600 hover:to-emerald-800 transition flex items-center justify-center gap-1.5 shadow-md shadow-emerald-500/30">
-                <i class="fa-solid fa-bolt text-[11px]"></i> Chuyển Nhanh
+                <i class="fa-solid fa-download text-[11px]"></i> Lưu QR Chuyển Khoản
               </button>
             </div>
           </div>
