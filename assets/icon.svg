@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981"/>
+      <stop offset="60%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#047857"/>
+    </linearGradient>
+    <linearGradient id="shine" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="white" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="white" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded square background (iOS auto-masks, Android uses as-is) -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="256" rx="112" fill="url(#shine)"/>
+
+  <!-- Decorative circles -->
+  <circle cx="440" cy="72" r="70" fill="white" fill-opacity="0.08"/>
+  <circle cx="72" cy="440" r="90" fill="white" fill-opacity="0.05"/>
+
+  <!-- Piggy bank silhouette -->
+  <g transform="translate(256 280)" fill="white">
+    <!-- Body (oval) -->
+    <ellipse cx="0" cy="0" rx="140" ry="100"/>
+    <!-- Snout -->
+    <ellipse cx="118" cy="8" rx="30" ry="36" fill="#d1fae5"/>
+    <circle cx="114" cy="-4" r="6" fill="#047857"/>
+    <circle cx="114" cy="22" r="6" fill="#047857"/>
+    <!-- Ear (triangle flap) -->
+    <path d="M -75 -70 L -35 -30 L -100 -35 Z"/>
+    <!-- Eye -->
+    <circle cx="-30" cy="-15" r="11" fill="#047857"/>
+    <circle cx="-26" cy="-19" r="3" fill="white"/>
+    <!-- Coin slot -->
+    <rect x="-38" y="-78" width="76" height="14" rx="7" fill="#065f46"/>
+    <!-- Legs -->
+    <rect x="-95" y="85" width="28" height="42" rx="6"/>
+    <rect x="67"  y="85" width="28" height="42" rx="6"/>
+    <!-- Curly tail -->
+    <path d="M -140 10 q -22 -18 -10 -34 q 14 -14 24 0" fill="none" stroke="white" stroke-width="10" stroke-linecap="round"/>
+  </g>
+
+  <!-- Falling coin -->
+  <g transform="translate(256 140)">
+    <circle r="22" fill="#fbbf24" stroke="#b45309" stroke-width="3"/>
+    <text x="0" y="7" font-family="system-ui, sans-serif" font-size="24" font-weight="800" text-anchor="middle" fill="#78350f">₫</text>
+  </g>
+</svg>
