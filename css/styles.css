@@ -267,10 +267,19 @@ html, body {
   border-radius: 14px;
   border: 1.5px solid #e2e8f0;
   background: #f8fafc;
-  font-size: 14px;
+  /* iOS Safari zooms in when a user taps any input whose font-size is
+     < 16px, then fails to un-zoom cleanly — the field ends up looking
+     smaller than it should. 16px prevents the zoom on mobile while
+     staying visually the same weight as the rest of the UI. */
+  font-size: 16px;
+  line-height: 1.35;
   font-family: inherit;
   transition: all .15s ease;
   color: var(--ink);
+}
+/* Desktop can use a tighter font — the no-zoom constraint doesn't apply. */
+@media (min-width: 640px) {
+  .fb-input { font-size: 14px; }
 }
 .fb-input:focus {
   outline: none;
