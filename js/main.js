@@ -315,3 +315,15 @@ function renderFatal(err) {
 }
 
 bootstrap();
+
+// Register the service worker for offline + instant-reload caching. Must
+// be same-origin (./sw.js resolves relative to index.html). Registration
+// is deferred until after bootstrap so the first session never blocks on
+// SW install.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('./sw.js', { scope: './' })
+      .catch((err) => console.warn('[sw] register failed:', err));
+  });
+}

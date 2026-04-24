@@ -20,7 +20,25 @@ export async function getFirebase() {
 
   const app = appMod.initializeApp(cfg.firebase);
   const auth = authMod.getAuth(app);
-  const db = fsMod.getFirestore(app);
+
+  // Enable Firestore IndexedDB persistence BEFORE any read/write so data
+  // from last session shows up instantly on reload — the realtime listener
+  // then reconciles with the server in the background.
+  //
+  // Multi-tab manager lets several tabs share the same IndexedDB cache
+  // without races; older API (enableIndexedDbPersistence) only allowed one
+  // active tab.
+  let db;
+  try {
+    db = fsMod.initializeFirestore(app, {
+      localCache: fsMod.persistentLocalCache({
+        tabManager: fsMod.persistentMultipleTabManager(),
+      }),
+    });
+  } catch (e) {
+    console.warn('[firestore] persistent cache init failed, using memory cache:', e?.code || e?.message);
+    db = fsMod.getFirestore(app);
+  }
 
   _firebase = { app, auth, db, appMod, authMod, fsMod };
   return _firebase;
