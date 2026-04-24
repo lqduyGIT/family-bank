@@ -171,10 +171,16 @@ function renderMyGroupsList(mount, myGroups, currentGroup, user) {
   container.innerHTML = myGroups.map((g) => {
     const isCurrent = currentGroup && g.id === currentGroup.id;
     const isOwnerOfG = user && g.ownerUid === user.uid;
+    // The name goes into its own <span class="truncate"> because Tailwind's
+    // `truncate` utility requires a single-line block; it can't truncate
+    // text inside a flex container that also holds badges — those badges
+    // would end up on their own line instead of staying inline with a
+    // cut-off name. Wrapping just the name with min-w-0 on the flex row
+    // gives us "name…  👑  Đang ở đây".
     return `
       <button
         data-switch-group="${g.id}"
-        class="w-full flex items-center gap-3 p-3 rounded-2xl text-left transition
+        class="w-full flex items-center gap-3 p-3 rounded-2xl text-left transition min-w-0
                ${isCurrent ? 'bg-emerald-50 border-2 border-emerald-200' : 'bg-slate-50 hover:bg-emerald-50 border-2 border-transparent'}"
         ${isCurrent ? 'disabled style="cursor:default"' : ''}
       >
@@ -182,14 +188,14 @@ function renderMyGroupsList(mount, myGroups, currentGroup, user) {
           <i class="fa-solid fa-house text-xs"></i>
         </div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-semibold text-slate-800 truncate flex items-center gap-1.5">
-            ${escapeHtml(g.name || '—')}
-            ${isOwnerOfG ? '<span class="text-[9px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded">👑</span>' : ''}
-            ${isCurrent ? '<span class="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded">Đang ở đây</span>' : ''}
-          </p>
+          <div class="text-sm font-semibold text-slate-800 flex items-center gap-1.5 min-w-0">
+            <span class="truncate min-w-0">${escapeHtml(g.name || '—')}</span>
+            ${isOwnerOfG ? '<span class="text-[9px] bg-amber-100 text-amber-700 font-bold px-1.5 py-0.5 rounded shrink-0">👑</span>' : ''}
+            ${isCurrent ? '<span class="text-[9px] bg-emerald-600 text-white font-bold px-1.5 py-0.5 rounded shrink-0">Đang ở đây</span>' : ''}
+          </div>
           <p class="text-[10px] text-slate-500 truncate">${g.bankName ? escapeHtml(g.bankName) : 'Chưa cấu hình ngân hàng'}</p>
         </div>
-        ${!isCurrent ? '<i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i>' : ''}
+        ${!isCurrent ? '<i class="fa-solid fa-chevron-right text-slate-400 text-xs shrink-0"></i>' : ''}
       </button>
     `;
   }).join('');

@@ -352,14 +352,25 @@ html, body {
   padding-top: calc(env(safe-area-inset-top) + 16px);
 }
 
-/* The only scrollable area inside the phone frame. */
+/* The only scrollable area inside the phone frame. overflow-x: hidden is
+   a safety net — when a child (like a <select> with long options or a
+   long group name) tries to push wider than the frame, we clip instead
+   of showing a horizontal scrollbar. */
 #view {
   flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;                    /* allow flex child to shrink so it scrolls */
+  overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding-bottom: 12px;
+}
+
+/* Belt-and-braces: constrain form controls so a <select> with long option
+   text (bank full names) can't expand past its parent. */
+.fb-input {
+  max-width: 100%;
 }
 
 /* Full-height views (login, group-gate, setup) need their own safe-area top
