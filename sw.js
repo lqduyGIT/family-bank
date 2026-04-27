@@ -11,7 +11,7 @@
 // release. Old caches are pruned on `activate`.
 // ============================================================
 
-const CACHE_NAME = 'family-bank-v1';
+const CACHE_NAME = 'family-bank-v2';
 
 // Same-origin assets to pre-cache on first install so the offline-first
 // experience works from session #2 onward.
