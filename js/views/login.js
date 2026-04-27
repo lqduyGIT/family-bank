@@ -29,6 +29,21 @@ export function render(mount) {
           </svg>
           Tiếp tục với Google
         </button>
+
+        <div class="flex items-center gap-3 my-4">
+          <div class="flex-1 h-px bg-slate-200"></div>
+          <span class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">hoặc</span>
+          <div class="flex-1 h-px bg-slate-200"></div>
+        </div>
+
+        <button id="guest-btn" class="w-full flex items-center justify-center gap-3 py-3 rounded-2xl border-2 border-dashed border-slate-300 hover:bg-slate-50 active:bg-slate-100 transition font-semibold text-slate-600">
+          <i class="fa-solid fa-user-secret text-slate-500"></i>
+          Tiếp tục với khách
+        </button>
+        <p class="text-[10px] text-slate-400 mt-2 leading-snug text-center">
+          Tài khoản tạm — sẽ <strong>bị xoá khi đăng xuất</strong> hoặc xoá ứng dụng.
+          Không khôi phục được. Khuyên dùng Google nếu lưu dữ liệu lâu dài.
+        </p>
       </div>
 
       <div class="bg-emerald-50 border border-emerald-100 rounded-2xl p-4 text-[12px] text-emerald-800">
@@ -52,6 +67,24 @@ export function render(mount) {
         ? 'Đã huỷ đăng nhập'
         : (err.message || 'Đăng nhập thất bại');
       toast(msg, 'error');
+    }
+  });
+
+  const guestBtn = mount.querySelector('#guest-btn');
+  guestBtn.addEventListener('click', async () => {
+    const oldHtml = guestBtn.innerHTML;
+    guestBtn.disabled = true;
+    guestBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Đang vào...`;
+    try {
+      await store.signInAsGuest();
+    } catch (err) {
+      console.error(err);
+      const msg = err?.code === 'auth/operation-not-allowed'
+        ? 'Anonymous Auth chưa được bật trong Firebase Console'
+        : (err?.message || 'Vào với khách thất bại');
+      toast(msg, 'error');
+      guestBtn.disabled = false;
+      guestBtn.innerHTML = oldHtml;
     }
   });
 }

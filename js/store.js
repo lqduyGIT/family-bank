@@ -4,7 +4,13 @@
 // ============================================================
 
 import { getFirebase } from './firebase.js';
-import { onAuthChange, signInWithGoogle as authSignIn, signOut as authSignOut } from './auth.js';
+import {
+  onAuthChange,
+  signInWithGoogle as authSignIn,
+  signInAsGuest as authSignInAsGuest,
+  signOut as authSignOut,
+  deleteCurrentUser as authDeleteCurrentUser,
+} from './auth.js';
 
 const EMPTY_STATE = () => ({
   status: 'loading',  // 'loading' | 'anonymous' | 'no-group' | 'ready'
@@ -112,7 +118,37 @@ class Store {
     catch (e) { this._set({ error: e.message }); throw e; }
   }
 
+  async signInAsGuest() {
+    try { await authSignInAsGuest(); }
+    catch (e) { this._set({ error: e.message }); throw e; }
+  }
+
   async signOut() {
+    // For anonymous (guest) users we tear down everything from the server
+    // before signing out so we don't leave behind orphan auth records or
+    // data the user can never reach again. For Google users we just sign
+    // out — their data stays in Firestore for next login.
+    const { auth } = await getFirebase();
+    const fbUser = auth.currentUser;
+    const isAnonymous = !!fbUser?.isAnonymous;
+
+    if (isAnonymous && fbUser) {
+      // Surface a loading spinner during the multi-step cleanup
+      this._teardownGroup();
+      this._set({ status: 'loading' });
+      try {
+        await this._deleteGuestData(fbUser.uid);
+      } catch (e) {
+        console.warn('[guest] data cleanup failed:', e);
+      }
+      try {
+        await authDeleteCurrentUser();
+      } catch (e) {
+        // Firebase may require recent re-auth; fall through to plain signOut.
+        console.warn('[guest] auth delete failed, signing out instead:', e?.code || e);
+      }
+    }
+
     // Clear local caches scoped to this app (banks list, etc.) but keep
     // Firebase SDK's IndexedDB since auth state will be reset properly.
     try {
@@ -128,8 +164,73 @@ class Store {
       members: [], transactions: [], error: null,
     });
 
-    await authSignOut();
+    // Plain signOut is a no-op if the user was already deleted, so wrap.
+    await authSignOut().catch(() => {});
     // onAuthChange will fire next and transition status → 'anonymous'
+  }
+
+  // Direct Firestore cleanup for a guest's data — leaves every group with
+  // the same transfer-or-delete logic as the regular leaveGroup flow, then
+  // removes the user doc itself. Doesn't rely on store state because we
+  // may not have it loaded for every group.
+  async _deleteGuestData(uid) {
+    const { db, fsMod } = await getFirebase();
+    const userRef = fsMod.doc(db, 'users', uid);
+
+    let groupIds = [];
+    try {
+      const userSnap = await fsMod.getDoc(userRef);
+      if (userSnap.exists()) groupIds = userSnap.data().groupIds || [];
+    } catch (e) {
+      console.warn('[guest] read user doc failed:', e);
+    }
+
+    for (const gid of groupIds) {
+      try {
+        await this._guestLeaveGroup(uid, gid);
+      } catch (e) {
+        console.warn('[guest] leave group failed', gid, e);
+      }
+    }
+
+    try { await fsMod.deleteDoc(userRef); }
+    catch (e) { console.warn('[guest] delete user doc failed:', e); }
+  }
+
+  async _guestLeaveGroup(uid, groupId) {
+    const { db, fsMod } = await getFirebase();
+    const groupRef = fsMod.doc(db, 'groups', groupId);
+    const groupSnap = await fsMod.getDoc(groupRef);
+    if (!groupSnap.exists()) return;
+
+    const group = groupSnap.data();
+    const membersSnap = await fsMod.getDocs(fsMod.collection(db, 'groups', groupId, 'members'));
+    const members = membersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const others = members.filter((m) => m.uid !== uid);
+    const isOwner = group.ownerUid === uid;
+
+    const batch = fsMod.writeBatch(db);
+    const memberRef = fsMod.doc(db, 'groups', groupId, 'members', uid);
+
+    if (isOwner && others.length === 0) {
+      batch.delete(groupRef);
+    } else if (isOwner && others.length > 0) {
+      const next = [...others].sort(
+        (a, b) => new Date(a.joinedAt || 0) - new Date(b.joinedAt || 0)
+      )[0];
+      batch.update(groupRef, { ownerUid: next.uid });
+      batch.delete(memberRef);
+    } else {
+      batch.delete(memberRef);
+    }
+
+    await batch.commit();
+
+    // Best-effort invite-code cleanup when the group itself was deleted.
+    if (isOwner && others.length === 0 && group.inviteCode) {
+      try { await fsMod.deleteDoc(fsMod.doc(db, 'inviteCodes', group.inviteCode)); }
+      catch (e) { console.warn('[guest] invite code cleanup skipped:', e?.code || e); }
+    }
   }
 
   // ---- Group actions ----
