@@ -119,8 +119,38 @@ class Store {
   }
 
   async signInAsGuest() {
-    try { await authSignInAsGuest(); }
-    catch (e) { this._set({ error: e.message }); throw e; }
+    try {
+      const cred = await authSignInAsGuest();
+
+      // Race fix: signInAnonymously fires onAuthStateChanged BEFORE
+      // updateProfile completes, so the listener captures displayName=null
+      // and persists 'Ẩn danh' to users/{uid}. Once updateProfile has run
+      // we override both the in-memory state and the Firestore record so
+      // 'Guest' shows up immediately — without forcing a full reload.
+      if (cred?.user) {
+        const newName = cred.user.displayName || 'Guest';
+
+        if (this._state.user) {
+          this._set({
+            user: { ...this._state.user, displayName: newName },
+          });
+        }
+
+        try {
+          const { db, fsMod } = await getFirebase();
+          await fsMod.setDoc(
+            fsMod.doc(db, 'users', cred.user.uid),
+            { displayName: newName },
+            { merge: true }
+          );
+        } catch (e) {
+          console.warn('[guest] firestore displayName update failed:', e);
+        }
+      }
+    } catch (e) {
+      this._set({ error: e.message });
+      throw e;
+    }
   }
 
   async signOut() {
