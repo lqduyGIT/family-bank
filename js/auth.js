@@ -21,26 +21,43 @@ export async function signInAsGuest() {
 
   const cred = await authMod.signInAnonymously(auth);
 
-  // Atomic counter increment (handles first-ever guest by initialising the doc)
-  let seq = 1;
+  // Counter is best-effort with a hard 3s timeout. Firestore transactions
+  // retry internally on contention, and if /counters/{name} rules aren't
+  // deployed (or the network is flaky) the retries can stall sign-in for
+  // 10+ seconds. We'd rather show "Guest A7X9" than make the user wait.
+  let label;
   try {
-    seq = await fsMod.runTransaction(db, async (txn) => {
-      const ref = fsMod.doc(db, 'counters', 'guestSequence');
-      const snap = await txn.get(ref);
-      const current = snap.exists() ? (snap.data().next || 1) : 1;
-      const next = current + 1;
-      if (snap.exists()) txn.update(ref, { next });
-      else                txn.set(ref, { next });
-      return current;
-    });
+    const seq = await Promise.race([
+      fsMod.runTransaction(db, async (txn) => {
+        const ref = fsMod.doc(db, 'counters', 'guestSequence');
+        const snap = await txn.get(ref);
+        const current = snap.exists() ? (snap.data().next || 1) : 1;
+        const next = current + 1;
+        if (snap.exists()) txn.update(ref, { next });
+        else               txn.set(ref, { next });
+        return current;
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('counter-timeout')), 3000)
+      ),
+    ]);
+    label = `Guest ${seq}`;
   } catch (e) {
-    console.warn('[guest] counter txn failed, falling back to uid suffix:', e);
-    seq = cred.user.uid.slice(0, 4).toUpperCase();
+    console.warn('[guest] counter unavailable, using uid suffix:', e?.code || e?.message);
+    label = `Guest ${cred.user.uid.slice(0, 4).toUpperCase()}`;
   }
 
-  await authMod.updateProfile(cred.user, { displayName: `Guest ${seq}` });
-  // Force-refresh local user object so onAuthChange picks up the new name
-  await cred.user.reload();
+  // updateProfile + reload are also wrapped in a soft timeout so a hung
+  // request can't pin the login spinner. The displayName is cosmetic —
+  // missing it just shows "Guest" until next reload.
+  try {
+    await Promise.race([
+      authMod.updateProfile(cred.user, { displayName: label }).then(() => cred.user.reload()),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('updateProfile-timeout')), 3000)),
+    ]);
+  } catch (e) {
+    console.warn('[guest] updateProfile/reload skipped:', e?.message);
+  }
 
   return cred;
 }
