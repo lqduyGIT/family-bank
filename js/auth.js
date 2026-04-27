@@ -17,42 +17,19 @@ export async function signInWithGoogle() {
 // random uid suffix. The label is set as the user's displayName so the
 // rest of the app picks it up via onAuthChange without special casing.
 export async function signInAsGuest() {
-  const { auth, authMod, db, fsMod } = await getFirebase();
+  const { auth, authMod } = await getFirebase();
 
   const cred = await authMod.signInAnonymously(auth);
 
-  // Counter is best-effort with a hard 3s timeout. Firestore transactions
-  // retry internally on contention, and if /counters/{name} rules aren't
-  // deployed (or the network is flaky) the retries can stall sign-in for
-  // 10+ seconds. We'd rather show "Guest A7X9" than make the user wait.
-  let label;
-  try {
-    const seq = await Promise.race([
-      fsMod.runTransaction(db, async (txn) => {
-        const ref = fsMod.doc(db, 'counters', 'guestSequence');
-        const snap = await txn.get(ref);
-        const current = snap.exists() ? (snap.data().next || 1) : 1;
-        const next = current + 1;
-        if (snap.exists()) txn.update(ref, { next });
-        else               txn.set(ref, { next });
-        return current;
-      }),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('counter-timeout')), 3000)
-      ),
-    ]);
-    label = `Guest ${seq}`;
-  } catch (e) {
-    console.warn('[guest] counter unavailable, using uid suffix:', e?.code || e?.message);
-    label = `Guest ${cred.user.uid.slice(0, 4).toUpperCase()}`;
-  }
-
-  // updateProfile + reload are also wrapped in a soft timeout so a hung
-  // request can't pin the login spinner. The displayName is cosmetic —
-  // missing it just shows "Guest" until next reload.
+  // Display name is fixed at "Guest" — no per-user numbering, no Firestore
+  // counter, no transactions to retry. Anonymous users share the label
+  // (their uid is still unique, so Firestore docs and group memberships
+  // never collide). updateProfile is wrapped in a soft 3s timeout so a
+  // slow network can't pin the login spinner; the label is cosmetic and
+  // will repopulate on the next reload if it gets skipped here.
   try {
     await Promise.race([
-      authMod.updateProfile(cred.user, { displayName: label }).then(() => cred.user.reload()),
+      authMod.updateProfile(cred.user, { displayName: 'Guest' }).then(() => cred.user.reload()),
       new Promise((_, reject) => setTimeout(() => reject(new Error('updateProfile-timeout')), 3000)),
     ]);
   } catch (e) {
