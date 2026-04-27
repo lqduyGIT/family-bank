@@ -55,12 +55,21 @@ export async function deleteCurrentUser() {
 export async function onAuthChange(fn) {
   const { auth, authMod } = await getFirebase();
   return authMod.onAuthStateChanged(auth, (user) => {
-    fn(user ? {
+    if (!user) { fn(null); return; }
+
+    // For anonymous users, the listener can fire BEFORE updateProfile sets
+    // the 'Guest' label (signInAnonymously resolves first, listener queues,
+    // updateProfile runs after). Coalesce here so subscribers never see a
+    // null displayName for a guest — the header renders 'Guest' immediately
+    // and the in-memory snapshot stays consistent with what we persist to
+    // Firestore.
+    fn({
       uid: user.uid,
-      displayName: user.displayName,
+      displayName: user.displayName
+        || (user.isAnonymous ? 'Guest' : 'Ẩn danh'),
       photoURL: user.photoURL,
       email: user.email,
       isAnonymous: !!user.isAnonymous,
-    } : null);
+    });
   });
 }
