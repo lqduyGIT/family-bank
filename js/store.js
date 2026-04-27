@@ -442,6 +442,77 @@ class Store {
     await fsMod.updateDoc(fsMod.doc(db, 'groups', group.id), patch);
   }
 
+  // Owner-only: completely tear down the current group — every transaction,
+  // every member doc, the invite code and the group doc itself. Other
+  // members will see the group disappear via their existing onSnapshot
+  // listener (which falls through to status='no-group'). Their stale
+  // currentGroupId / groupIds entries clean up on next login via the
+  // backfill in the auth listener.
+  async disbandGroup() {
+    const user = this._state.user;
+    const group = this._state.group;
+    if (!user || !group) throw new Error('Chưa sẵn sàng');
+    if (group.ownerUid !== user.uid) throw new Error('Chỉ chủ nhóm mới giải tán được');
+
+    const { db, fsMod } = await getFirebase();
+    const groupId = group.id;
+    const inviteCode = group.inviteCode;
+
+    // Firestore client SDK can't recursively delete a subcollection in one
+    // shot, so we enumerate + batch-delete each one manually.
+    await this._deleteSubcollection(['groups', groupId, 'transactions']);
+    await this._deleteSubcollection(['groups', groupId, 'members']);
+
+    // Best-effort invite-code cleanup. Owner may not be the original
+    // creator (no transfer logic anymore, but kept defensive); skipping is
+    // fine — orphan codes resolve to a missing group on join attempts.
+    if (inviteCode) {
+      try { await fsMod.deleteDoc(fsMod.doc(db, 'inviteCodes', inviteCode)); }
+      catch (e) { console.warn('[disband] invite code cleanup skipped:', e?.code || e); }
+    }
+
+    await fsMod.deleteDoc(fsMod.doc(db, 'groups', groupId));
+
+    // Owner's user doc: pull the deleted group out of groupIds and rotate
+    // currentGroupId to the next available group, if any.
+    const remaining = this._state.myGroups.filter((g) => g.id !== groupId);
+    const nextCurrent = remaining[0]?.id || null;
+    await fsMod.setDoc(
+      fsMod.doc(db, 'users', user.uid),
+      {
+        currentGroupId: nextCurrent,
+        groupIds: fsMod.arrayRemove(groupId),
+      },
+      { merge: true }
+    );
+
+    this._teardownGroup();
+    await this._refreshMyGroupsFromUserDoc();
+
+    if (nextCurrent) {
+      this._set({ status: 'loading', group: null, members: [], transactions: [] });
+      await this._attachGroup(nextCurrent);
+    } else {
+      this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+    }
+  }
+
+  async _deleteSubcollection(pathSegments) {
+    const { db, fsMod } = await getFirebase();
+    const colRef = fsMod.collection(db, ...pathSegments);
+    const snap = await fsMod.getDocs(colRef);
+    if (snap.empty) return;
+
+    // Firestore caps batch writes at 500 ops; chunk to be safe.
+    const docs = snap.docs;
+    const CHUNK = 450;
+    for (let i = 0; i < docs.length; i += CHUNK) {
+      const batch = fsMod.writeBatch(db);
+      docs.slice(i, i + CHUNK).forEach((d) => batch.delete(d.ref));
+      await batch.commit();
+    }
+  }
+
   // ---- Transactions ----
   async addTransaction({ type, amount, note, category, memberUid }) {
     const user = this._state.user;

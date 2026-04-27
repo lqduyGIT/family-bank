@@ -157,6 +157,15 @@ async function update(mount, state, banksPromise) {
   });
   mount.querySelector('[data-act="save"]').disabled = !isOwner;
   mount.querySelector('[data-act="save"]').style.opacity = isOwner ? '1' : '0.5';
+
+  // Owner's "leave" button is actually a "disband group" button — swap
+  // label + icon so the action matches the destructive consequence.
+  const leaveBtn = mount.querySelector('[data-act="leave"]');
+  if (leaveBtn) {
+    leaveBtn.innerHTML = isOwner
+      ? `<i class="fa-solid fa-explosion mr-1"></i> Giải tán nhóm`
+      : `<i class="fa-solid fa-door-open mr-1"></i> Rời khỏi nhóm`;
+  }
 }
 
 function renderMyGroupsList(mount, myGroups, currentGroup, user) {
@@ -254,38 +263,46 @@ async function leaveGroup() {
   const state = store.getState();
   const group = state.group;
   const user = state.user;
-  const members = state.members;
   if (!group || !user) return;
 
   const isOwner = group.ownerUid === user.uid;
-  const others = members.filter((m) => m.uid !== user.uid);
+  const safeName = escapeHtml(group.name || '—');
 
-  let title, message;
-  if (isOwner && others.length === 0) {
-    title = '⚠ Xoá nhóm vĩnh viễn?';
-    message = `Bạn là thành viên cuối cùng của "${group.name}". Rời đi sẽ <strong>xoá nhóm và toàn bộ lịch sử giao dịch</strong>. Hành động không thể hoàn tác.`;
-  } else if (isOwner && others.length > 0) {
-    const nextOwner = [...others].sort((a, b) => new Date(a.joinedAt || 0) - new Date(b.joinedAt || 0))[0];
-    title = 'Chuyển quyền chủ nhóm?';
-    message = `Bạn là chủ nhóm "${group.name}". Rời đi → quyền quản lý sẽ chuyển cho <strong>${nextOwner.displayName || 'Ẩn danh'}</strong> (thành viên tham gia sớm nhất). Bạn có thể tham gia lại bằng mã mời, nhưng sẽ thành thành viên thường.`;
+  if (isOwner) {
+    // Owner → disband (destroys the whole group). No automatic ownership
+    // transfer anymore — owners explicitly choose to dissolve the group.
+    const ok = await confirmDialog({
+      title: '⚠ Giải tán nhóm?',
+      message: `Giải tán "<strong>${safeName}</strong>" sẽ <strong>xoá nhóm + toàn bộ lịch sử giao dịch</strong>. Mọi thành viên mất quyền truy cập. Hành động không thể hoàn tác.`,
+      confirmText: 'Giải tán nhóm',
+      danger: true,
+    });
+    if (!ok) return;
+
+    try {
+      await store.disbandGroup();
+      toast('Đã giải tán nhóm', 'info');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Không giải tán được — thử lại', 'error');
+    }
   } else {
-    title = 'Rời khỏi nhóm?';
-    message = `Bạn sẽ không còn thấy giao dịch của "${group.name}". Có thể tham gia lại bằng mã mời sau.`;
-  }
+    // Member → just leaves. Behaviour unchanged.
+    const ok = await confirmDialog({
+      title: 'Rời khỏi nhóm?',
+      message: `Bạn sẽ không còn thấy giao dịch của "${safeName}". Có thể tham gia lại bằng mã mời sau.`,
+      confirmText: 'Rời nhóm',
+      danger: true,
+    });
+    if (!ok) return;
 
-  const ok = await confirmDialog({
-    title, message,
-    confirmText: isOwner && others.length === 0 ? 'Xoá nhóm' : 'Rời nhóm',
-    danger: true,
-  });
-  if (!ok) return;
-
-  try {
-    await store.leaveGroup();
-    toast(isOwner && others.length === 0 ? 'Đã xoá nhóm' : 'Đã rời nhóm', 'info');
-  } catch (err) {
-    console.error(err);
-    toast(err.message || 'Không rời được — thử lại', 'error');
+    try {
+      await store.leaveGroup();
+      toast('Đã rời nhóm', 'info');
+    } catch (err) {
+      console.error(err);
+      toast(err.message || 'Không rời được — thử lại', 'error');
+    }
   }
 }
 
