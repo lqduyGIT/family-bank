@@ -132,10 +132,24 @@ class Store {
     const fbUser = auth.currentUser;
     const isAnonymous = !!fbUser?.isAnonymous;
 
+    // Show loading immediately and clear any cached state from this session.
+    this._teardownGroup();
+    this._set({
+      status: 'loading',
+      user: null, group: null, members: [], transactions: [], myGroups: [],
+      error: null,
+    });
+
+    // Clear local caches scoped to this app (banks list, etc.) but keep
+    // Firebase SDK's IndexedDB since auth state will be reset properly.
+    try {
+      for (let i = localStorage.length - 1; i >= 0; i--) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('family-bank:')) localStorage.removeItem(key);
+      }
+    } catch {}
+
     if (isAnonymous && fbUser) {
-      // Surface a loading spinner during the multi-step cleanup
-      this._teardownGroup();
-      this._set({ status: 'loading' });
       try {
         await this._deleteGuestData(fbUser.uid);
       } catch (e) {
@@ -149,24 +163,21 @@ class Store {
       }
     }
 
-    // Clear local caches scoped to this app (banks list, etc.) but keep
-    // Firebase SDK's IndexedDB since auth state will be reset properly.
-    try {
-      for (let i = localStorage.length - 1; i >= 0; i--) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('family-bank:')) localStorage.removeItem(key);
-      }
-    } catch {}
-
-    this._teardownGroup();
-    this._set({
-      status: 'loading', user: null, group: null,
-      members: [], transactions: [], error: null,
-    });
-
-    // Plain signOut is a no-op if the user was already deleted, so wrap.
+    // Plain signOut is a no-op if the user was already deleted (delete() also
+    // signs the user out and fires onAuthStateChanged), but we call it anyway
+    // for the Google path and the guest-delete-failed fallback.
     await authSignOut().catch(() => {});
-    // onAuthChange will fire next and transition status → 'anonymous'
+
+    // RACE FIX: Firebase delete() schedules onAuthStateChanged → listener
+    // sets status='anonymous'. authSignOut() afterwards is a no-op (user
+    // already gone), so it does NOT fire a second auth event. If the listener
+    // somehow gets queued behind a later state update, the UI gets stuck on
+    // 'loading'. Force the final state here — idempotent with the listener.
+    this._set({
+      status: 'anonymous',
+      user: null, group: null, members: [], transactions: [], myGroups: [],
+      error: null,
+    });
   }
 
   // Direct Firestore cleanup for a guest's data — leaves every group with
