@@ -122,6 +122,16 @@ export function render(mount) {
     renderReactive(state);
   });
 
+  // Force a fresh refresh from the SERVER on every mount of this page —
+  // covers the case where another device disbanded a group while we were
+  // elsewhere or offline. _refreshMyGroups (with its server read + auto-
+  // prune) drops dead groups from the user doc so the picker re-renders
+  // without them. Background, non-blocking; the initial paint above used
+  // whatever was cached.
+  store._refreshMyGroupsFromUserDoc().catch((e) => {
+    console.warn('[group-gate] background refresh failed:', e?.code || e?.message);
+  });
+
   // ---- One-time form bindings (preserved across reactive re-renders) ----
   const nameInput = mount.querySelector('#group-name');
   const codeInput = mount.querySelector('#invite-code');

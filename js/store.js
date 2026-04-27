@@ -366,7 +366,23 @@ class Store {
     // we tried to attach without checking, the user would see a brief
     // 'loading' flash before falling back to no-group, leaving the dead
     // group still in their list. Catch + clean up + surface a clear error.
-    const groupSnap = await fsMod.getDoc(fsMod.doc(db, 'groups', groupId));
+    //
+    // Two failure modes both mean "group is gone":
+    //   1. snap.exists() === false  — doc fully deleted
+    //   2. permission-denied error  — group still exists in cache, but
+    //      members subcoll was wiped so isMember() denies our read.
+    //      This happens when the owner's disband already deleted members
+    //      but our local cache hasn't seen the group doc deletion yet.
+    let groupSnap;
+    try {
+      groupSnap = await fsMod.getDoc(fsMod.doc(db, 'groups', groupId));
+    } catch (e) {
+      if (e?.code === 'permission-denied') {
+        await this._cleanupStaleGroup(groupId);
+        throw new Error('Nhóm này đã bị giải tán hoặc xoá');
+      }
+      throw e;
+    }
     if (!groupSnap.exists()) {
       await this._cleanupStaleGroup(groupId);
       throw new Error('Nhóm này đã bị giải tán hoặc xoá');
@@ -604,7 +620,24 @@ class Store {
         const group = { id: snap.id, ...snap.data() };
         this._set({ group, status: 'ready' });
       },
-      (err) => {
+      async (err) => {
+        // permission-denied here = the group still has its doc but the
+        // /members subcollection was wiped (mid-disband state), so
+        // isMember() in the rules now denies our snapshot. Treat exactly
+        // like the !exists() branch above so the disbanded group is
+        // pruned from every UI surface immediately.
+        if (err?.code === 'permission-denied') {
+          this._teardownGroup();
+          await this._cleanupStaleGroup(groupId);
+          const next = this._state.myGroups[0]?.id;
+          if (next) {
+            this._set({ status: 'loading', group: null, members: [], transactions: [] });
+            await this._attachGroup(next);
+          } else {
+            this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+          }
+          return;
+        }
         console.error('[store] group snapshot error:', err);
         this._set({ error: 'Không truy cập được nhóm. Có thể bạn đã bị xoá khỏi nhóm.', group: null, members: [], transactions: [], status: 'no-group' });
       }
@@ -636,26 +669,71 @@ class Store {
   }
 
   // ---- Internal: refresh myGroups list ----
+  // Verifies every gid in groupIds against the SERVER (not the local cache,
+  // which can lag for ~minutes after another device disbands a group).
+  // Anything that comes back as deleted, permission-denied, or otherwise
+  // unreadable is treated as "the group is gone for me" and pruned out of
+  // both the in-memory list AND the user doc — so disbanded groups
+  // disappear from every picker on the next refresh, no tap required.
   async _refreshMyGroups(groupIds) {
     if (!Array.isArray(groupIds) || groupIds.length === 0) {
       this._set({ myGroups: [] });
       return;
     }
     const { db, fsMod } = await getFirebase();
-    const snaps = await Promise.all(
+    const user = this._state.user;
+
+    const results = await Promise.all(
       groupIds.map(async (gid) => {
-        try { return await fsMod.getDoc(fsMod.doc(db, 'groups', gid)); }
-        catch { return null; }
+        try {
+          // Force server read — local cache may still hold a doc that the
+          // owner already deleted (Firestore replicates on its own clock).
+          const snap = await fsMod.getDocFromServer(fsMod.doc(db, 'groups', gid));
+          return snap.exists() ? { snap } : { staleId: gid };
+        } catch (e) {
+          // permission-denied: members subcoll wiped → rules deny our read
+          // → the group is dead from our perspective.
+          if (e?.code === 'permission-denied' || e?.code === 'not-found') {
+            return { staleId: gid };
+          }
+          // unavailable: we're offline. Fall back to cache so the picker
+          // still shows something — better than an empty list when the
+          // network blips. Cache-only result is treated as authoritative
+          // for "is this group still around" until we're online again.
+          if (e?.code === 'unavailable') {
+            try {
+              const cached = await fsMod.getDocFromCache(fsMod.doc(db, 'groups', gid));
+              return cached.exists() ? { snap: cached } : { staleId: gid };
+            } catch { return null; }
+          }
+          return null;
+        }
       })
     );
-    const myGroups = snaps
-      .filter((s) => s && s.exists())
-      .map((s) => ({
-        id: s.id,
-        name: s.data().name,
-        ownerUid: s.data().ownerUid,
-        bankName: s.data().bankName,
-        inviteCode: s.data().inviteCode,
+
+    // Prune stale gids from the user's groupIds so the picker never
+    // surfaces them again on this device or any other.
+    const staleIds = results.filter((r) => r?.staleId).map((r) => r.staleId);
+    if (staleIds.length > 0 && user) {
+      try {
+        await fsMod.setDoc(
+          fsMod.doc(db, 'users', user.uid),
+          { groupIds: fsMod.arrayRemove(...staleIds) },
+          { merge: true }
+        );
+      } catch (e) {
+        console.warn('[refresh] prune stale groupIds failed:', e?.code || e);
+      }
+    }
+
+    const myGroups = results
+      .filter((r) => r && r.snap)
+      .map(({ snap }) => ({
+        id: snap.id,
+        name: snap.data().name,
+        ownerUid: snap.data().ownerUid,
+        bankName: snap.data().bankName,
+        inviteCode: snap.data().inviteCode,
       }));
     this._set({ myGroups });
   }
