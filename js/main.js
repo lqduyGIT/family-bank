@@ -54,10 +54,16 @@ async function onStateChange(state) {
 
   if (state.status === 'anonymous') {
     const mod = await import('./views/login.js');
-    mod.render($('#view'));
+    const dispose = mod.render($('#view'));
+    currentDispose = typeof dispose === 'function' ? dispose : null;
   } else if (state.status === 'no-group') {
+    // group-gate subscribes to store and re-renders its "Nhóm của bạn"
+    // section reactively (so a stale entry vanishes when another device
+    // disbands a group). Capture the unsubscribe so we tear it down on
+    // status change.
     const mod = await import('./views/group-gate.js');
-    mod.render($('#view'));
+    const dispose = mod.render($('#view'));
+    currentDispose = typeof dispose === 'function' ? dispose : null;
   } else if (state.status === 'ready') {
     // Only re-render tab when first entering ready
     if (lastStatus !== 'ready') {

@@ -360,10 +360,41 @@ class Store {
     if (this._state.group?.id === groupId) return; // already there
 
     const { db, fsMod } = await getFirebase();
+
+    // Defensive existence check — guards against the case where another
+    // device disbanded this group while our myGroups cache was stale. If
+    // we tried to attach without checking, the user would see a brief
+    // 'loading' flash before falling back to no-group, leaving the dead
+    // group still in their list. Catch + clean up + surface a clear error.
+    const groupSnap = await fsMod.getDoc(fsMod.doc(db, 'groups', groupId));
+    if (!groupSnap.exists()) {
+      await this._cleanupStaleGroup(groupId);
+      throw new Error('Nhóm này đã bị giải tán hoặc xoá');
+    }
+
     await fsMod.setDoc(fsMod.doc(db, 'users', user.uid), { currentGroupId: groupId }, { merge: true });
 
     this._set({ status: 'loading', group: null, members: [], transactions: [] });
     await this._attachGroup(groupId);
+  }
+
+  // Remove a no-longer-existing group from our user doc + refresh the
+  // in-memory list. Called by both _attachGroup (active group disappeared
+  // mid-session) and switchGroup (clicked a stale entry).
+  async _cleanupStaleGroup(groupId) {
+    const user = this._state.user;
+    if (!user || !groupId) return;
+    const { db, fsMod } = await getFirebase();
+    try {
+      await fsMod.setDoc(
+        fsMod.doc(db, 'users', user.uid),
+        { groupIds: fsMod.arrayRemove(groupId) },
+        { merge: true }
+      );
+    } catch (e) {
+      console.warn('[cleanup] groupIds prune failed:', e?.code || e);
+    }
+    await this._refreshMyGroupsFromUserDoc();
   }
 
   async leaveGroup() {
@@ -551,11 +582,23 @@ class Store {
     const groupRef = fsMod.doc(db, 'groups', groupId);
     this._unsubGroup = fsMod.onSnapshot(
       groupRef,
-      (snap) => {
+      async (snap) => {
         if (!snap.exists()) {
-          // Group disappeared → reset
+          // Group disappeared (e.g. owner disbanded). Clean up our user
+          // doc + in-memory list so the group never reappears in pickers,
+          // then route to the next group (or no-group). Without this,
+          // members keep seeing the dead group in "Nhóm của bạn" until
+          // they sign in again, and tapping it just flashes back here.
           this._teardownGroup();
-          this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+          await this._cleanupStaleGroup(groupId);
+
+          const next = this._state.myGroups[0]?.id;
+          if (next) {
+            this._set({ status: 'loading', group: null, members: [], transactions: [] });
+            await this._attachGroup(next);
+          } else {
+            this._set({ group: null, members: [], transactions: [], status: 'no-group' });
+          }
           return;
         }
         const group = { id: snap.id, ...snap.data() };

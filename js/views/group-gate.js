@@ -4,6 +4,10 @@
 //   - List of groups user already belongs to (if any) → tap to switch
 //   - Create new group form
 //   - Join by invite-code form
+//
+// Reactive: the "Nhóm của bạn" list re-renders whenever store.myGroups
+// changes (e.g. owner of another device disbanded a group), without
+// disturbing form inputs the user may be typing into.
 // ============================================================
 
 import { store } from '../store.js';
@@ -11,36 +15,15 @@ import { toast } from '../components/toast.js';
 import { escapeHtml } from '../utils.js';
 
 export function render(mount) {
-  const state = store.getState();
-  const user = state.user;
-  const myGroups = state.myGroups || [];
-
+  // Static shell: form sections + named mount points for reactive bits.
+  // The header/heading/my-groups are populated by renderReactive() below.
   mount.innerHTML = `
     <section class="px-6 pt-4 pb-10">
-      <div class="flex items-center justify-between mb-6">
-        <div class="flex items-center gap-3">
-          ${user?.photoURL ? `<img src="${user.photoURL}" class="w-10 h-10 rounded-full" referrerpolicy="no-referrer" />` : ''}
-          <div>
-            <p class="text-[11px] text-slate-500">Đã đăng nhập</p>
-            <p class="text-sm font-semibold text-slate-800">${escapeHtml(user?.displayName || user?.email || '')}</p>
-          </div>
-        </div>
-        <button id="sign-out" class="text-xs text-slate-500 hover:text-red-500 font-medium">
-          <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
-        </button>
-      </div>
+      <div class="flex items-center justify-between mb-6" data-header></div>
 
-      <div class="text-center mb-6">
-        <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 flex items-center justify-center mb-3">
-          <i class="fa-solid fa-people-group text-emerald-600 text-2xl"></i>
-        </div>
-        <h1 class="text-xl font-bold text-slate-800">${myGroups.length > 0 ? 'Chọn nhóm để vào' : 'Chọn nhóm gia đình'}</h1>
-        <p class="text-sm text-slate-500 mt-1">
-          ${myGroups.length > 0 ? `Bạn đang là thành viên của ${myGroups.length} nhóm` : 'Tạo nhóm mới hoặc tham gia nhóm có sẵn'}
-        </p>
-      </div>
+      <div class="text-center mb-6" data-heading></div>
 
-      ${myGroups.length > 0 ? renderMyGroupsSection(myGroups, user) : ''}
+      <div data-my-groups-mount></div>
 
       <!-- Create group -->
       <div class="bg-white rounded-3xl p-5 neu-soft mb-4">
@@ -74,21 +57,72 @@ export function render(mount) {
     </section>
   `;
 
-  // My-groups: click to switch
-  mount.querySelectorAll('[data-switch-group]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const gid = btn.dataset.switchGroup;
-      setBusy(btn, true);
-      try {
-        await store.switchGroup(gid);
-      } catch (err) {
-        console.error(err);
-        toast(err.message || 'Không vào được nhóm', 'error');
-        setBusy(btn, false);
-      }
-    });
+  // ---- Reactive sections ----
+  const renderReactive = (state) => {
+    const user = state.user;
+    const myGroups = state.myGroups || [];
+
+    // Header (avatar + name + sign-out)
+    const headerEl = mount.querySelector('[data-header]');
+    if (headerEl) {
+      headerEl.innerHTML = `
+        <div class="flex items-center gap-3 min-w-0">
+          ${user?.photoURL ? `<img src="${user.photoURL}" class="w-10 h-10 rounded-full shrink-0" referrerpolicy="no-referrer" />` : ''}
+          <div class="min-w-0">
+            <p class="text-[11px] text-slate-500">Đã đăng nhập</p>
+            <p class="text-sm font-semibold text-slate-800 truncate">${escapeHtml(user?.displayName || user?.email || 'Guest')}</p>
+          </div>
+        </div>
+        <button id="sign-out" class="text-xs text-slate-500 hover:text-red-500 font-medium shrink-0">
+          <i class="fa-solid fa-right-from-bracket"></i> Đăng xuất
+        </button>
+      `;
+      headerEl.querySelector('#sign-out')?.addEventListener('click', () => store.signOut());
+    }
+
+    // Heading
+    const headingEl = mount.querySelector('[data-heading]');
+    if (headingEl) {
+      headingEl.innerHTML = `
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-100 flex items-center justify-center mb-3">
+          <i class="fa-solid fa-people-group text-emerald-600 text-2xl"></i>
+        </div>
+        <h1 class="text-xl font-bold text-slate-800">${myGroups.length > 0 ? 'Chọn nhóm để vào' : 'Chọn nhóm gia đình'}</h1>
+        <p class="text-sm text-slate-500 mt-1">
+          ${myGroups.length > 0 ? `Bạn đang là thành viên của ${myGroups.length} nhóm` : 'Tạo nhóm mới hoặc tham gia nhóm có sẵn'}
+        </p>
+      `;
+    }
+
+    // My groups list
+    const groupsEl = mount.querySelector('[data-my-groups-mount]');
+    if (groupsEl) {
+      groupsEl.innerHTML = myGroups.length > 0 ? renderMyGroupsSection(myGroups, user) : '';
+      groupsEl.querySelectorAll('[data-switch-group]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          const gid = btn.dataset.switchGroup;
+          setBusy(btn, true);
+          try {
+            await store.switchGroup(gid);
+          } catch (err) {
+            console.error(err);
+            toast(err.message || 'Không vào được nhóm', 'error');
+            setBusy(btn, false);
+          }
+        });
+      });
+    }
+  };
+
+  // Initial render + subscribe for any future state changes (e.g. another
+  // device disbands a group → store cleans up myGroups → list shrinks here).
+  renderReactive(store.getState());
+  const unsub = store.subscribe((state) => {
+    if (state.status !== 'no-group') return; // ignore other phases
+    renderReactive(state);
   });
 
+  // ---- One-time form bindings (preserved across reactive re-renders) ----
   const nameInput = mount.querySelector('#group-name');
   const codeInput = mount.querySelector('#invite-code');
   const createBtn = mount.querySelector('#create-btn');
@@ -134,7 +168,7 @@ export function render(mount) {
     }
   });
 
-  mount.querySelector('#sign-out').addEventListener('click', () => store.signOut());
+  return () => unsub();
 }
 
 function renderMyGroupsSection(myGroups, user) {
@@ -155,13 +189,13 @@ function renderMyGroupsSection(myGroups, user) {
                 <i class="fa-solid fa-house"></i>
               </div>
               <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold text-slate-800 truncate flex items-center gap-1.5">
-                  ${escapeHtml(g.name || '—')}
-                  ${isOwner ? '<span class="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 rounded">👑 Chủ</span>' : ''}
-                </p>
+                <div class="text-sm font-semibold text-slate-800 flex items-center gap-1.5 min-w-0">
+                  <span class="truncate min-w-0">${escapeHtml(g.name || '—')}</span>
+                  ${isOwner ? '<span class="text-[10px] bg-amber-100 text-amber-700 font-bold px-1.5 rounded shrink-0">👑 Chủ</span>' : ''}
+                </div>
                 <p class="text-[11px] text-slate-500 truncate">${g.bankName ? escapeHtml(g.bankName) : 'Chưa cấu hình ngân hàng'}</p>
               </div>
-              <i class="fa-solid fa-chevron-right text-slate-400 text-xs"></i>
+              <i class="fa-solid fa-chevron-right text-slate-400 text-xs shrink-0"></i>
             </button>
           `;
         }).join('')}
